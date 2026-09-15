@@ -106,6 +106,17 @@ log = None
 agent_logger = None
 executor = tools.ToolExecutor()
 
+# Only these tools can plausibly indicate a landed exploit/cracked credential
+# on their own output -- recon/lookup tools (searchsploit, nmap, gobuster,
+# nikto, ...) never should. Confirmed empirically: searchsploit's own
+# boilerplate footer ("Shellcodes: No Results") contains the substring
+# "shell", which without this restriction marked every single searchsploit
+# call as a successful breach regardless of whether it found anything.
+EXPLOIT_TOOLS = {"run_hydra", "run_medusa", "run_ncrack", "run_john", "run_sqlmap"}
+# Word-boundary match, not a bare substring check, for the same reason --
+# "shell" must not match inside "shellcodes".
+SUCCESS_KEYWORDS = re.compile(r"\b(password|login|session|shell|success|found|valid)\b", re.IGNORECASE)
+
 
 def bootstrap():
     """Validate config and stand up logging. Must run before anything else."""
@@ -212,7 +223,12 @@ def call_model(goal):
         "stream": False,
         "format": CHAIN_JSON_SCHEMA,
         "options": {
-            "temperature": 0.1,
+            # 0.3 matches BaronLLM's own recommended setting for
+            # "deterministic reasoning tasks" -- low enough to stay
+            # conservative, but enough room to pick a different pentest tool
+            # when the first choice stalls or conflicts, which matters for
+            # this semi-creative, adaptive tool-chaining task.
+            "temperature": 0.3,
             "top_p": 0.9,
             "num_ctx": CONFIG.OLLAMA_NUM_CTX,
         },
@@ -304,8 +320,7 @@ def run_attack_loop(target, memory, cache=None):
                 log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {step.get('tool')}")
                 continue
             output, ok = execute_step(step)
-            if ok and output and any(x in output.lower() for x in
-                                      ["password", "login", "session", "shell", "success", "found", "valid"]):
+            if ok and output and step.get("tool") in EXPLOIT_TOOLS and SUCCESS_KEYWORDS.search(output):
                 success = True
                 if cache:
                     cache.record_success(step)

@@ -39,13 +39,14 @@ FROM /path/to/models/baronllm-llama3.1-v1-q6_k.gguf
 # prompt-size warning heuristic, but the real ceiling is set here.
 PARAMETER num_ctx 4096
 
-# Low temperature / top_p: this model's only job is picking a tool chain
-# from a fixed, schema-constrained vocabulary, not creative generation.
-# (BaronLLM's own model card recommends temperature 0.3 for "deterministic
-# reasoning tasks" -- 0.1 tested at least as reliably for pure tool-call
-# selection and is more conservative; raise toward 0.3 if you want more
-# varied tool choices.)
-PARAMETER temperature 0.1
+# temperature 0.3 matches BaronLLM's own model card recommendation for
+# "deterministic reasoning tasks" -- conservative, but enough headroom for
+# the model to switch pentest tools when its first choice stalls or
+# conflicts, which suits this semi-creative, adaptive tool-chaining task.
+# (Kept in sync with the "options.temperature" agent.py sends per-request,
+# which is what actually takes effect -- this PARAMETER only matters if you
+# run the model directly via `ollama run` outside the agent.)
+PARAMETER temperature 0.3
 PARAMETER top_p 0.9
 
 # No TEMPLATE directive -- BaronLLM's GGUF already embeds the correct chat

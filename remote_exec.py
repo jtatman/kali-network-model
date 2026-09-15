@@ -12,16 +12,31 @@ failure (command_not_found / timeout / command_failed / permission_denied),
 so "Kali box unreachable" and "nmap isn't installed" don't look identical.
 """
 
+import os
 import shlex
 import subprocess
 
 from config import CONFIG
+
+# Pentest targets are typically new or freshly re-imaged hosts the operator
+# has never SSH'd to interactively -- the default StrictHostKeyChecking
+# policy (effectively "ask", which BatchMode turns into an immediate
+# "Host key verification failed") would reject every first-time connection.
+# accept-new trusts an unseen host's key on first contact but still refuses
+# (and correctly surfaces as a real failure) if a previously-seen host's key
+# ever changes, which is the actual MITM/target-swap case worth catching.
+# A dedicated known_hosts file (not the operator's ~/.ssh/known_hosts) means
+# re-imaging a target/container doesn't require manually editing the
+# operator's personal SSH state.
+_KNOWN_HOSTS_FILE = os.path.join(CONFIG.CACHE_DIR, "known_hosts")
 
 
 def _base_ssh_argv():
     return [
         "ssh",
         "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", f"UserKnownHostsFile={_KNOWN_HOSTS_FILE}",
         "-o", f"ConnectTimeout={CONFIG.SSH_CONNECT_TIMEOUT_SECONDS}",
         "-i", CONFIG.SSH_KEY_PATH,
         "-p", str(CONFIG.SSH_PORT),
