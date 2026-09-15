@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "kali_network_model",
+  "project_id": "892912c3-84ec-44de-8313-bb8dab5c8d46"
+}
