@@ -1,71 +1,22 @@
-import requests
+"""Merged orchestrator: talks to Ollama, decides what to run, and dispatches
+tool calls directly to tools.py (in-process -- no more HTTP hop to a separate
+mcp_server.py). Retargeted from LM Studio + local Kali execution to Ollama
+(native /api/chat, structured JSON output) + remote execution over SSH,
+either directly on the Kali box or via `docker exec` into a container there
+(tools.py / remote_exec.py decide which, per CONFIG.EXEC_MODE).
+"""
+
 import json
-import logging
 import re
-import os
+import requests
 from datetime import datetime
+
+from config import CONFIG, ConfigError
+import logging_setup
+import tools
 from agent_cache import NegativeCache
-
-LOG_DIR = "/home/bigkali/security-agent/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-
-SESSION_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE = f"{LOG_DIR}/session_{SESSION_ID}.log"
-
-class EmojiFormatter(logging.Formatter):
-    ICONS = {
-        "SCAN":    "🔍",
-        "ATTACK":  "⚔️ ",
-        "SUCCESS": "🎉😄",
-        "FAIL":    "😤💀",
-        "ERROR":   "😭🔥",
-        "TOOL":    "✅👍",
-        "MEMORY":  "🧠",
-        "MODEL":   "🤖",
-        "CHAIN":   "🔗",
-        "REPORT":  "📝",
-        "ENGAGE":  "💣",
-        "GOAL":    "🎯",
-        "START":   "🚀",
-        "FILE":    "📁",
-        "WEB":     "🌐",
-        "CREDS":   "🔑",
-    }
-
-    def format(self, record):
-        time = datetime.now().strftime("%H:%M:%S")
-        msg = record.getMessage()
-        icon = "ℹ️ "
-        for key, emoji in self.ICONS.items():
-            if f"[{key}]" in msg:
-                icon = emoji
-                msg = msg.replace(f"[{key}]", "").strip()
-                break
-        if record.levelno == logging.WARNING:
-            icon = "😤💀"
-        if record.levelno == logging.ERROR:
-            icon = "😭🔥"
-        return f"[{time}] {icon}  {msg}"
-
-def setup_logger():
-    logger = logging.getLogger("agent")
-    logger.setLevel(logging.DEBUG)
-    logger.handlers = []
-    fmt = EmojiFormatter()
-    fh = logging.FileHandler(LOG_FILE)
-    fh.setFormatter(fmt)
-    sh = logging.StreamHandler()
-    sh.setFormatter(fmt)
-    logger.addHandler(fh)
-    logger.addHandler(sh)
-    return logger
-
-log = setup_logger()
-log.info(f"[START] SECURITY AGENT SESSION {SESSION_ID}")
-log.info(f"[FILE] Log file: {LOG_FILE}")
-
-OLLAMA_URL = "http://192.168.0.39:1234/v1/chat/completions"
-MCP_URL = "http://localhost:8000"
+from logger import AgentLogger
+import report_generator
 
 SYSTEM_PROMPT = """You are an autonomous penetration testing agent.
 
@@ -102,10 +53,44 @@ HYDRA WORDLISTS - use these in order of speed:
 
 SEARCHSPLOIT: always use "keyword" param with service name only e.g. "vsftpd 2.3.4"
 
-RESPONSE FORMAT - VALID JSON ONLY:
-{"chain": [{"tool": "tool_name", "param1": "value1"}]}
+Respond with a tool chain: {"chain": [{"tool": "tool_name", "param1": "value1"}]}"""
 
-NO explanations. NO markdown. ONLY JSON."""
+# Constrains chain[].tool to a real, current tool name -- the model can no
+# longer hallucinate a nonexistent tool, which is the direct fix for the
+# SUPPORTED_TOOLS/SYSTEM_PROMPT/README drift this repo had before. Ollama
+# enforces this via the request's "format" field, so parse_model_response no
+# longer has to defensively parse untrusted free-text JSON.
+CHAIN_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "chain": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "enum": tools.SUPPORTED_TOOLS},
+                },
+                "required": ["tool"],
+            },
+        }
+    },
+    "required": ["chain"],
+}
+
+log = None
+agent_logger = None
+executor = tools.ToolExecutor()
+
+
+def bootstrap():
+    """Validate config and stand up logging. Must run before anything else."""
+    global log, agent_logger
+    CONFIG.validate()
+    log, log_file, session_id = logging_setup.setup_logger()
+    agent_logger = AgentLogger(session_id=session_id)
+    log.info(f"[START] SECURITY AGENT SESSION {session_id}")
+    log.info(f"[FILE] Log file: {log_file}")
+    return log_file
 
 
 class AgentMemory:
@@ -123,8 +108,11 @@ class AgentMemory:
         log.info(f"[MEMORY] Open ports discovered: {self.open_ports}")
 
     def add_finding(self, port, tool, detail):
-        self.findings.append({"port": port, "tool": tool, "detail": detail, "time": datetime.now().strftime("%H:%M:%S")})
-        log.info(f"[SUCCESS] Port {port} → {tool}: {detail}")
+        self.findings.append({
+            "port": port, "tool": tool, "detail": detail[:2000],
+            "time": datetime.now().strftime("%H:%M:%S"),
+        })
+        log.info(f"[SUCCESS] Port {port} → {tool}: {detail[:2000]}")
 
     def next_untried_port(self):
         for p in self.open_ports:
@@ -145,40 +133,80 @@ class AgentMemory:
     def has_untried_ports(self):
         return any(p not in self.tried_ports for p in self.open_ports)
 
+    def recent_failed_attacks(self, limit=10):
+        """Bounded view of failed_attacks for embedding in a model prompt --
+        the raw list is unbounded and would otherwise grow every prompt for
+        the rest of the engagement, eating into a small context window."""
+        if len(self.failed_attacks) <= limit:
+            return str(self.failed_attacks)
+        shown = self.failed_attacks[-limit:]
+        return f"{shown} (and {len(self.failed_attacks) - limit} more)"
+
     def summary(self):
-        return {"open_ports": self.open_ports, "tried": self.tried_ports, "successes": self.successful_attacks, "failures": self.failed_attacks, "findings": self.findings}
+        return {
+            "open_ports": self.open_ports, "tried": self.tried_ports,
+            "successes": self.successful_attacks, "failures": self.failed_attacks,
+            "findings": self.findings,
+        }
+
+
+def estimate_prompt_tokens(system_prompt, goal):
+    """Cheap chars/4 heuristic -- no tokenizer dependency needed for a
+    warning-level check against a quantized model's limited context."""
+    return (len(system_prompt) + len(goal)) // 4
+
 
 def parse_model_response(raw):
+    """Ollama's `format` schema guarantees `raw` is valid JSON matching
+    CHAIN_JSON_SCHEMA, so this is now just json.loads with a narrow
+    fallback for genuinely exceptional cases (empty response, network
+    hiccup surfaced as non-JSON) -- not a defensive markdown/brace parser."""
     try:
-        cleaned = raw.strip().replace("```json", "").replace("```", "").strip()
-        start = cleaned.find("{")
-        end = cleaned.rfind("}") + 1
-        if start == -1 or end == 0:
-            raise ValueError("No JSON found")
-        return json.loads(cleaned[start:end])
+        return json.loads(raw)
     except Exception as e:
         log.error(f"[ERROR] JSON parse failed: {e}")
         return {"chain": []}
 
+
 def call_model(goal):
     log.info(f"[MODEL] Thinking about: {goal[:80]}...")
+
+    est_tokens = estimate_prompt_tokens(SYSTEM_PROMPT, goal)
+    if est_tokens > CONFIG.OLLAMA_NUM_CTX * 0.8:
+        log.warning(
+            f"[MODEL] Prompt (~{est_tokens} tokens est.) is approaching "
+            f"OLLAMA_NUM_CTX={CONFIG.OLLAMA_NUM_CTX} — consider trimming."
+        )
+
     payload = {
-        "model": "qwen2.5-14b-instruct-abliterated-abliterated",
+        "model": CONFIG.OLLAMA_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": goal}
+            {"role": "user", "content": goal},
         ],
-        "temperature": 0.1,
-        "top_p": 0.9
+        "stream": False,
+        "format": CHAIN_JSON_SCHEMA,
+        "options": {
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "num_ctx": CONFIG.OLLAMA_NUM_CTX,
+        },
     }
     try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=7200)
-        raw = response.json()["choices"][0]["message"]["content"]
-        log.info(f"[MODEL] Response received ✅👍")
-        return parse_model_response(raw)
+        response = requests.post(
+            f"{CONFIG.OLLAMA_HOST}/api/chat", json=payload, timeout=CONFIG.EXEC_TIMEOUT_SECONDS
+        )
+        response.raise_for_status()
+        raw = response.json()["message"]["content"]
+        log.info("[MODEL] Response received ✅👍")
+        parsed = parse_model_response(raw)
+        agent_logger.log_decision(reasoning=goal, chosen_action=parsed)
+        return parsed
     except Exception as e:
         log.error(f"[ERROR] Model call failed: {e}")
+        agent_logger.log_error("ollama_call", str(e))
         return {"chain": []}
+
 
 def extract_ports(output):
     ports = re.findall(r'(\d+)/tcp\s+open|(\d+)/udp\s+open|port\s+(\d+)|open port (\d+)', output, re.IGNORECASE)
@@ -189,30 +217,34 @@ def extract_ports(output):
             found.append(port)
     return found
 
+
 def execute_step(step):
     tool = step.get("tool", "unknown")
+    params = {k: v for k, v in step.items() if k != "tool"}
     start_time = datetime.now()
-    log.info(f"[TOOL] Running → {tool} | params: { {k:v for k,v in step.items() if k != 'tool'} }")
+    log.info(f"[TOOL] Running → {tool} | params: {params}")
     try:
-        result = requests.post(MCP_URL, json=step, timeout=7200)
-        result_data = result.json()
-        output = result_data.get("stdout", "")
-        status = result_data.get("status", "")
+        result = executor.execute_tool(tool, params)
+        output = result.get("stdout", "")
+        status = result.get("status", "")
         duration = (datetime.now() - start_time).seconds
         if status == "success":
             log.info(f"[TOOL] ✅👍 {tool} completed in {duration}s")
             if output:
                 log.info(f"[TOOL] Output preview: {output[:200]}")
         else:
-            log.warning(f"[FAIL] 😤💀 {tool} failed after {duration}s → {result_data.get('message', 'unknown error')}")
+            log.warning(f"[FAIL] 😤💀 {tool} failed after {duration}s → {result.get('message', 'unknown error')}")
+        agent_logger.log_tool_call(tool, params, result)
         return output, status == "success"
     except Exception as e:
         log.error(f"[ERROR] 😭🔥 {tool} exception: {e}")
+        agent_logger.log_error(tool, str(e))
         return "", False
+
 
 def run_recon(target, memory):
     log.info(f"[SCAN] Starting recon on {target}")
-    goal = f"Scan {target} with masscan then nmap to find all open ports and services. JSON only."
+    goal = f"Scan {target} with masscan then nmap to find all open ports and services."
     data = call_model(goal)
     for step in data.get("chain", []):
         output, ok = execute_step(step)
@@ -222,14 +254,19 @@ def run_recon(target, memory):
                 memory.add_ports(ports)
                 log.info(f"[SCAN] 🎉😄 Found {len(ports)} open ports: {ports}")
             else:
-                log.warning(f"[SCAN] 😤💀 No ports found in output")
+                log.warning("[SCAN] 😤💀 No ports found in output")
+
 
 def run_attack_loop(target, memory, cache=None):
     log.info(f"[ATTACK] Starting attack loop on {target}")
     while memory.has_untried_ports():
         port = memory.next_untried_port()
         log.info(f"[ATTACK] ⚔️  Targeting port {port}")
-        goal = f"Target: {target} Port: {port}. Failed ports: {memory.failed_attacks}. Exploit this port with any available tool. Try multiple tools if needed. JSON only."
+        goal = (
+            f"Target: {target} Port: {port}. "
+            f"Failed ports: {memory.recent_failed_attacks()}. "
+            f"Exploit this port with any available tool. Try multiple tools if needed."
+        )
         data = call_model(goal)
         chain = data.get("chain", [])
         if not chain:
@@ -238,29 +275,29 @@ def run_attack_loop(target, memory, cache=None):
             continue
         success = False
         for step in chain:
-            # ── Negative cache gate ──────────────────────────────
             if cache and not cache.should_attempt(step):
                 log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {step.get('tool')}")
                 continue
-            # ────────────────────────────────────────────────────
             output, ok = execute_step(step)
-            if ok and output and any(x in output.lower() for x in ["password", "login", "session", "shell", "success", "found", "valid"]):
+            if ok and output and any(x in output.lower() for x in
+                                      ["password", "login", "session", "shell", "success", "found", "valid"]):
                 success = True
                 if cache:
                     cache.record_success(step)
-                memory.add_finding(port, step.get("tool"), output[:2000])
+                memory.add_finding(port, step.get("tool"), output)
             elif not ok:
                 if cache:
                     reason = f"tool={step.get('tool')} port={port} output_empty={not bool(output)}"
                     cache.record_failure(step, reason=reason)
         memory.mark_tried(port, success=success)
-    log.info(f"[ATTACK] Attack loop complete")
+    log.info("[ATTACK] Attack loop complete")
     summary = memory.summary()
     log.info(f"[MEMORY] Final summary: {summary}")
     if memory.successful_attacks:
         log.info(f"[SUCCESS] 🎉😄 BREACHED ports: {memory.successful_attacks}")
     else:
-        log.warning(f"[FAIL] 😤💀 No successful breaches this session")
+        log.warning("[FAIL] 😤💀 No successful breaches this session")
+
 
 def run_full_engagement(target):
     memory = AgentMemory()
@@ -270,8 +307,9 @@ def run_full_engagement(target):
     if memory.open_ports:
         run_attack_loop(target, memory, cache)
     else:
-        log.warning(f"[FAIL] 😤💀 No open ports found — aborting engagement")
+        log.warning("[FAIL] 😤💀 No open ports found — aborting engagement")
     return memory
+
 
 def execute_chain(chain, cache=None):
     for i, step in enumerate(chain, 1):
@@ -283,7 +321,9 @@ def execute_chain(chain, cache=None):
         if not ok and cache:
             cache.record_failure(step, reason=f"manual chain failure, step {i}")
 
+
 def main():
+    log_file = bootstrap()
     cache = NegativeCache()
     log.info("[START] 🚀 AUTONOMOUS SECURITY AGENT ONLINE")
     print("=" * 60)
@@ -293,7 +333,7 @@ def main():
     print("  engage <target>  - full recon + attack loop")
     print("  <any goal>       - single model query")
     print("  exit             - quit")
-    print(f"  📝 Session log: {LOG_FILE}")
+    print(f"  📝 Session log: {log_file}")
     print("=" * 60)
 
     while True:
@@ -307,8 +347,8 @@ def main():
             log.info(f"[GOAL] 🎯 {goal}")
             if goal.startswith("engage "):
                 target = goal.replace("engage ", "").strip()
-                memory = run_full_engagement(target)
-                log.info(f"[REPORT] 📝 Engagement complete — run report generator for client memo")
+                run_full_engagement(target)
+                log.info("[REPORT] 📝 Engagement complete — generating report")
             else:
                 data = call_model(goal)
                 chain = data.get("chain", [])
@@ -318,12 +358,19 @@ def main():
                     log.warning("[FAIL] 😤💀 No tool chain generated")
         except KeyboardInterrupt:
             log.info("[START] Interrupted by user")
-            import subprocess
-            subprocess.run(["python3", "/home/bigkali/security-agent/report_generator.py", LOG_FILE])
             break
         except Exception as e:
             log.error(f"[ERROR] 😭🔥 Fatal error: {e}")
             break
 
+    agent_logger.close()
+    report_path = report_generator.generate(agent_logger.log_file)
+    log.info(f"[REPORT] 📝 Report written to {report_path}")
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ConfigError as e:
+        print(f"Configuration error:\n{e}")
+        raise SystemExit(1)

@@ -2,15 +2,17 @@ import json
 import os
 from datetime import datetime
 
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+from config import CONFIG
+
 
 class AgentLogger:
-    def __init__(self):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = os.path.join(LOG_DIR, f"session_{timestamp}.json")
+    def __init__(self, session_id=None):
+        # Reuse the caller's session_id (e.g. from logging_setup.setup_logger())
+        # when given, so the JSON log and the emoji text log correlate.
+        session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = os.path.join(CONFIG.LOG_DIR, f"session_{session_id}.json")
         self.session = {
-            "session_id": timestamp,
+            "session_id": session_id,
             "started_at": datetime.now().isoformat(),
             "events": []
         }

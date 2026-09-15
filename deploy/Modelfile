@@ -1,0 +1,30 @@
+# Ollama Modelfile template for the pentest agent's structured-output model.
+#
+# This is a checked-in template, not something runnable from this repo as-is
+# -- the FROM path below must point at a GGUF file that actually exists on
+# the Ollama HOST (a separate machine from this orchestrator), and the model
+# is built and registered there, not here:
+#
+#   scp your-model.Q4_K_M.gguf ollama-host:/path/to/models/
+#   # on the Ollama host, after adjusting FROM below:
+#   ollama create pentest-agent -f Modelfile
+#
+# Then set OLLAMA_MODEL=pentest-agent (matching the name you gave `ollama
+# create`) and OLLAMA_HOST=http://<that host>:11434 in this orchestrator's
+# .env. See docs/SETUP.md for the full walkthrough.
+
+FROM /path/to/models/your-model.Q4_K_M.gguf
+
+# Keep this in sync with OLLAMA_NUM_CTX in .env -- it's used there only for a
+# prompt-size warning heuristic, but the real ceiling is set here.
+PARAMETER num_ctx 4096
+
+# Low temperature / top_p: this model's only job is picking a tool chain
+# from a fixed, schema-constrained vocabulary, not creative generation.
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+
+SYSTEM """You are an autonomous penetration testing agent. You will be given \
+a goal and must respond with a JSON tool chain matching the schema you are \
+given. Do not include any prose, explanation, or markdown -- only the \
+structured JSON response."""

@@ -4,6 +4,8 @@ import os
 import logging
 from datetime import datetime
 
+from config import CONFIG
+
 # ============================================================
 # 🧠 PERSISTENT NEGATIVE EXPERIENCE CACHE
 # PenMaster Security — Sovereign Agent Layer v1
@@ -14,8 +16,7 @@ from datetime import datetime
 # Fail twice → permanently blacklisted. Never wasted on again.
 # ============================================================
 
-CACHE_DIR = "/home/bigkali/security-agent"
-CACHE_FILE = os.path.join(CACHE_DIR, "failure_cache.json")
+CACHE_FILE = os.path.join(CONFIG.CACHE_DIR, "failure_cache.json")
 
 log = logging.getLogger("agent")
 
@@ -40,7 +41,7 @@ class NegativeCache:
     """
 
     def __init__(self):
-        os.makedirs(CACHE_DIR, exist_ok=True)
+        os.makedirs(CONFIG.CACHE_DIR, exist_ok=True)
         self._cache = self._load()
         log.info(f"[MEMORY] 🧠 Negative cache loaded — {len(self._cache)} blocked fingerprints")
 
