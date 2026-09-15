@@ -20,21 +20,32 @@ import report_generator
 
 SYSTEM_PROMPT = """You are an autonomous penetration testing agent.
 
-AVAILABLE TOOLS:
-- run_masscan: Fast port scanner
-- run_nmap: Detailed port scanner
-- run_sqlmap: SQL injection testing (params: target, level, risk)
-- run_nikto: Web vulnerability scanner
-- run_hydra: Credential brute forcing (params: target, service, username, wordlist)
-- run_searchsploit: Find exploits
-- run_command: Execute any shell command
-- write_file: Write content to files
-- read_file: Read file contents
-- run_john: Hash cracking (needs hash_file param)
-- run_gobuster: Web directory brute forcing
-- run_enum4linux: SMB/Samba enumeration (params: target)
-- run_medusa: Fast credential brute forcing
-- run_ncrack: Network authentication cracking (params: target, service, wordlist)
+AVAILABLE TOOLS — use EXACTLY these parameter names, every tool call must
+include its real parameters (the schema allows extra fields, but a tool call
+with no target/url/filename etc. will simply fail):
+- run_command: command
+- run_masscan: target, ports (default "1-65535"), rate (default "1000")
+- run_nmap: target, flags (default "-sV")
+- run_netstat: flags (default "-tuln")
+- run_sqlmap: target, technique (default "B"), dbms, level (default "1"), risk (default "1")
+- run_nikto: target, port (default "80"), ssl (bool)
+- run_hydra: target, service, username (required, never ""; guess "root"/"admin"/"administrator" if unknown), wordlist, threads (default "16")
+- run_searchsploit: keyword, type
+- run_curl: url, method (default "GET"), headers, data
+- run_wget: url, output, recursive (bool)
+- write_file: filename, content
+- read_file: filename
+- run_john: hash_file, wordlist, format
+- run_ncrack: target, service (default "ssh"), users (comma-separated), wordlist
+- run_gobuster: target, wordlist, mode (default "dir")
+- run_enum4linux: target
+- run_medusa: target, service (default "ssh"), username (required, never ""; guess "root"/"admin"/"administrator" if unknown), wordlist
+- run_setoolkit: attack_type (default "1"), target
+- run_subfinder: domain, silent (bool, default true)
+- run_nuclei: target, templates, severity
+- run_katana: target, depth (default "3")
+- run_ffuf: url, wordlist, param (default "FUZZ")
+- run_httpx: target, flags
 
 HYDRA SERVICE NAMES - use EXACTLY these:
 - FTP: "ftp"
@@ -53,13 +64,26 @@ HYDRA WORDLISTS - use these in order of speed:
 
 SEARCHSPLOIT: always use "keyword" param with service name only e.g. "vsftpd 2.3.4"
 
-Respond with a tool chain: {"chain": [{"tool": "tool_name", "param1": "value1"}]}"""
+CREDENTIAL TOOLS (hydra, medusa, ncrack): if no specific username is known,
+guess common defaults such as "root", "admin", "administrator" -- never leave
+username/users blank, an empty username fails immediately.
+
+Respond with a tool chain using each tool's REAL parameter names from the list
+above, e.g.: {"chain": [{"tool": "run_nmap", "target": "10.0.0.5", "flags": "-sV"}]}
+Never invent generic names like "param1"/"param2" -- use the exact names listed above."""
 
 # Constrains chain[].tool to a real, current tool name -- the model can no
 # longer hallucinate a nonexistent tool, which is the direct fix for the
 # SUPPORTED_TOOLS/SYSTEM_PROMPT/README drift this repo had before. Ollama
 # enforces this via the request's "format" field, so parse_model_response no
 # longer has to defensively parse untrusted free-text JSON.
+#
+# "additionalProperties": true is NOT optional decoration here -- Ollama's
+# grammar-constrained decoder (verified empirically against a real model)
+# treats a missing additionalProperties as false: without this flag it
+# silently drops every tool param (target, service, wordlist, ...) and only
+# ever emits {"tool": "..."} , which then fails every _run_* method's
+# required-param check. Confirmed the flag fixes it before relying on it.
 CHAIN_JSON_SCHEMA = {
     "type": "object",
     "properties": {
@@ -71,6 +95,7 @@ CHAIN_JSON_SCHEMA = {
                     "tool": {"type": "string", "enum": tools.SUPPORTED_TOOLS},
                 },
                 "required": ["tool"],
+                "additionalProperties": True,
             },
         }
     },

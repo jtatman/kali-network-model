@@ -1,11 +1,31 @@
-# Ollama Modelfile template for the pentest agent's structured-output model.
+# Ollama Modelfile for the pentest agent's structured-output model.
+#
+# RECOMMENDED MODEL: BaronLLM (AlicanKiraz0/Cybersecurity-BaronLLM_Offensive_Security_LLM_Q6_K_GGUF)
+# -- an offensive-security fine-tune of Llama-3.1-8B-Instruct. Chosen over
+# the other commonly-found "kali-pentester" Llama-3.1 GGUF fine-tunes after
+# empirical A/B testing through this agent's real Ollama /api/chat + JSON
+# schema pipeline (not just a guess):
+#   - BaronLLM's GGUF has a properly embedded tokenizer.chat_template (the
+#     stock Meta Llama-3.1-Instruct template) and the correct instruct EOS
+#     token (<|eot_id|>, 128009) -- confirmed via `gguf_dump.py --no-tensors`
+#     against the file. That means NO custom TEMPLATE directive is needed
+#     below; Ollama uses the model's own embedded template automatically.
+#   - Other "kali-pentester" Llama-3.1 fine-tunes found in the wild (e.g.
+#     suryanshp1/Llama-3.1-8B-kali-pentester) are fine-tuned from the raw
+#     *base* checkpoint with no chat_template embedded and a base EOS token
+#     (128001) -- meaning they need a hand-built Alpaca-style TEMPLATE (see
+#     Modelfile.alt-base-completion in this directory) and, in side-by-side
+#     testing, followed this agent's structured tool-call parameter-naming
+#     instructions far less reliably (frequently emitted generic param1/
+#     param2/param3 keys instead of the real target/service/wordlist keys
+#     tools.py expects) than BaronLLM did across every test prompt.
 #
 # This is a checked-in template, not something runnable from this repo as-is
 # -- the FROM path below must point at a GGUF file that actually exists on
 # the Ollama HOST (a separate machine from this orchestrator), and the model
 # is built and registered there, not here:
 #
-#   scp your-model.Q4_K_M.gguf ollama-host:/path/to/models/
+#   scp baronllm-llama3.1-v1-q6_k.gguf ollama-host:/path/to/models/
 #   # on the Ollama host, after adjusting FROM below:
 #   ollama create pentest-agent -f Modelfile
 #
@@ -13,7 +33,7 @@
 # create`) and OLLAMA_HOST=http://<that host>:11434 in this orchestrator's
 # .env. See docs/SETUP.md for the full walkthrough.
 
-FROM /path/to/models/your-model.Q4_K_M.gguf
+FROM /path/to/models/baronllm-llama3.1-v1-q6_k.gguf
 
 # Keep this in sync with OLLAMA_NUM_CTX in .env -- it's used there only for a
 # prompt-size warning heuristic, but the real ceiling is set here.
@@ -21,8 +41,16 @@ PARAMETER num_ctx 4096
 
 # Low temperature / top_p: this model's only job is picking a tool chain
 # from a fixed, schema-constrained vocabulary, not creative generation.
+# (BaronLLM's own model card recommends temperature 0.3 for "deterministic
+# reasoning tasks" -- 0.1 tested at least as reliably for pure tool-call
+# selection and is more conservative; raise toward 0.3 if you want more
+# varied tool choices.)
 PARAMETER temperature 0.1
 PARAMETER top_p 0.9
+
+# No TEMPLATE directive -- BaronLLM's GGUF already embeds the correct chat
+# template. Do not add one unless you switch to a model without an embedded
+# tokenizer.chat_template (check first: `ollama show <model> --modelfile`).
 
 SYSTEM """You are an autonomous penetration testing agent. You will be given \
 a goal and must respond with a JSON tool chain matching the schema you are \

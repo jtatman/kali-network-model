@@ -1,0 +1,36 @@
+# Alternate Modelfile for a base-completion-style fine-tune (e.g. the
+# suryanshp1/Llama-3.1-8B-kali-pentester GGUF, and similar community
+# fine-tunes built from Llama-3.1-8B's raw *base* checkpoint rather than
+# Instruct).
+#
+# NOT recommended as the default -- see deploy/Modelfile for the empirical
+# A/B comparison. Kept here for reference if you specifically want to run
+# this model, or another one that shares its profile: no embedded
+# tokenizer.chat_template, and an EOS token matching the base model's plain
+# <|end_of_text|> (128001) rather than the instruct <|eot_id|> (128009).
+# Check any new GGUF with `gguf_dump.py --no-tensors <file>` before assuming
+# either profile.
+#
+# Because there's no embedded chat template, Ollama has nothing to fall back
+# on -- an explicit Alpaca-style TEMPLATE is required or the model receives
+# unstructured raw text.
+
+FROM /path/to/models/Llama-3.1-8B-kali-pentester.Q4_K_M.gguf
+
+PARAMETER num_ctx 4096
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER stop "### Instruction:"
+PARAMETER stop "### Input:"
+PARAMETER stop "### Response:"
+
+TEMPLATE """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
+
+### Instruction:
+{{ .System }}
+
+### Input:
+{{ .Prompt }}
+
+### Response:
+"""
