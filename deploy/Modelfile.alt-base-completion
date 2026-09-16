@@ -4,8 +4,11 @@
 # Instruct).
 #
 # NOT recommended as the default -- see deploy/Modelfile for the empirical
-# A/B comparison. Kept here for reference if you specifically want to run
-# this model, or another one that shares its profile: no embedded
+# A/B comparison. Registered on the real host as "pentest-agent-alt"
+# (`ollama create pentest-agent-alt -f deploy/Modelfile.alt-base-completion`)
+# so both models can be compared by swapping OLLAMA_MODEL in .env. Kept
+# here for reference if you specifically want to run this model, or another
+# one that shares its profile: no embedded
 # tokenizer.chat_template, and an EOS token matching the base model's plain
 # <|end_of_text|> (128001) rather than the instruct <|eot_id|> (128009).
 # Check any new GGUF with `gguf_dump.py --no-tensors <file>` before assuming

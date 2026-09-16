@@ -20,7 +20,7 @@ SUPPORTED_TOOLS = [
     "run_sqlmap", "run_nikto", "run_hydra", "run_searchsploit",
     "run_curl", "run_wget", "write_file", "read_file",
     "run_john", "run_ncrack", "run_gobuster", "run_enum4linux", "run_medusa", "run_setoolkit",
-    "run_subfinder", "run_nuclei", "run_katana", "run_ffuf", "run_httpx",
+    "run_subfinder", "run_nuclei", "run_katana", "run_ffuf", "run_httpx", "run_metasploit",
 ]
 
 
@@ -91,6 +91,8 @@ class ToolExecutor:
                 params.get("target", ""), params.get("service", "ssh"), params.get("username", ""),
                 params.get("wordlist", ""),
             )
+        elif tool == "run_metasploit":
+            return self._run_metasploit(params.get("commands", ""))
         else:
             return {
                 "status": "error",
@@ -393,3 +395,21 @@ class ToolExecutor:
         else:
             command += " -status-code -title -tech-detect -silent"
         return self._execute_command(command, timeout=60)
+
+    def _run_metasploit(self, commands):
+        """Runs raw msfconsole commands non-interactively via `-q -x`.
+
+        The model supplies real msfconsole commands (search/use/set/run/
+        exploit, etc.) as one ";"-separated string -- there's no attempt at
+        a structured module/RHOSTS/RPORT param interface, since that would
+        just be a second, narrower copy of what msfconsole itself already
+        accepts. `exit -y` is appended (if not already present) so the
+        console always terminates instead of hanging on stdin.
+        """
+        if not commands:
+            return {"status": "error", "error_type": "invalid_params", "message": "No msfconsole commands specified"}
+        script = commands.strip().rstrip(";").strip()
+        if not script.endswith("exit") and "exit -y" not in script:
+            script += "; exit -y"
+        command = f"msfconsole -q -x {shlex.quote(script)}"
+        return self._execute_command(command)

