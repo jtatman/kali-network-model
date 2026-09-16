@@ -362,7 +362,11 @@ class ToolExecutor:
         if not target:
             return {"status": "error", "error_type": "invalid_params", "message": "No target specified"}
         command = f"nuclei -u {target}"
-        if templates:
+        # "all"/"*" isn't a real -t value -- nuclei has no such alias and
+        # errors with "no templates provided for scan". Omitting -t entirely
+        # is what actually means "scan with the full default template set",
+        # which is what a model asking for "all" almost always means.
+        if templates and templates.strip().lower() not in ("all", "*", "any"):
             command += f" -t {templates}"
         if severity:
             command += f" -severity {severity}"
