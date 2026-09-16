@@ -45,7 +45,12 @@ class Config:
         self.REMOTE_WRITE_MODE = _get("REMOTE_WRITE_MODE", "remote")
 
         # Tool binaries
-        self.HTTPX_BIN = _get("HTTPX_BIN", "httpx")
+        # Kali packages ProjectDiscovery's httpx as "httpx-toolkit", not
+        # "httpx" -- that name is taken by the unrelated python3-httpx HTTP
+        # client CLI, which is commonly already installed and would
+        # otherwise silently shadow the real tool (confirmed on a real box:
+        # different flags entirely, "-h" isn't even valid).
+        self.HTTPX_BIN = _get("HTTPX_BIN", "httpx-toolkit")
 
     def validate(self):
         errors = []

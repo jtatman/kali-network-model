@@ -37,14 +37,16 @@ with no target/url/filename etc. will simply fail):
 - read_file: filename
 - run_john: hash_file, wordlist, format
 - run_ncrack: target, service (default "ssh"), users (comma-separated), wordlist
-- run_gobuster: target, wordlist, mode (default "dir")
+- run_gobuster: target, wordlist (omit to use a working default; if you set
+  it, use exactly "/usr/share/seclists/Discovery/Web-Content/common.txt"),
+  mode (default "dir")
 - run_enum4linux: target
 - run_medusa: target, service (default "ssh"), username (required, never ""; guess "root"/"admin"/"administrator" if unknown), wordlist
 - run_setoolkit: attack_type (default "1"), target
 - run_subfinder: domain, silent (bool, default true)
 - run_nuclei: target, templates, severity
 - run_katana: target, depth (default "3")
-- run_ffuf: url, wordlist, param (default "FUZZ")
+- run_ffuf: url, wordlist (same guidance as run_gobuster above), param (default "FUZZ")
 - run_httpx: target, flags
 
 HYDRA SERVICE NAMES - use EXACTLY these:
@@ -67,6 +69,20 @@ SEARCHSPLOIT: always use "keyword" param with service name only e.g. "vsftpd 2.3
 CREDENTIAL TOOLS (hydra, medusa, ncrack): if no specific username is known,
 guess common defaults such as "root", "admin", "administrator" -- never leave
 username/users blank, an empty username fails immediately.
+
+WHEN ASKED TO EXPLOIT A PORT, YOU ALREADY KNOW IT IS OPEN -- re-running
+run_nmap/run_masscan on it again is NOT an attempt and NEVER counts as
+progress. Pick a REAL exploitation/enumeration tool based on the port:
+- 21 (FTP), 22 (SSH): run_hydra or run_medusa or run_ncrack (credential brute force)
+- 23 (Telnet): SKIP, not worth attacking
+- 80, 443, 3000, 8000, 8080, and other likely web ports: run_gobuster or
+  run_ffuf (directory brute force), run_nikto (vuln scan), run_sqlmap (if a
+  form/query param is visible), run_nuclei (template-based vuln scan)
+- 139, 445 (SMB): run_enum4linux, then run_hydra/run_medusa with service "smb"
+- 3306 (MySQL), 5432 (PostgreSQL): run_hydra with the matching service name
+- Anything unrecognized: run_searchsploit with the service/version string
+  from recon, or run_command to interact with it directly (e.g. curl-style
+  probes) -- but still make an actual attempt, not another scan.
 
 Respond with a tool chain using each tool's REAL parameter names from the list
 above, e.g.: {"chain": [{"tool": "run_nmap", "target": "10.0.0.5", "flags": "-sV"}]}
@@ -106,16 +122,36 @@ log = None
 agent_logger = None
 executor = tools.ToolExecutor()
 
-# Only these tools can plausibly indicate a landed exploit/cracked credential
-# on their own output -- recon/lookup tools (searchsploit, nmap, gobuster,
-# nikto, ...) never should. Confirmed empirically: searchsploit's own
-# boilerplate footer ("Shellcodes: No Results") contains the substring
-# "shell", which without this restriction marked every single searchsploit
-# call as a successful breach regardless of whether it found anything.
-EXPLOIT_TOOLS = {"run_hydra", "run_medusa", "run_ncrack", "run_john", "run_sqlmap"}
-# Word-boundary match, not a bare substring check, for the same reason --
-# "shell" must not match inside "shellcodes".
-SUCCESS_KEYWORDS = re.compile(r"\b(password|login|session|shell|success|found|valid)\b", re.IGNORECASE)
+def _detect_exploit_success(tool, output):
+    """Tool-specific success detection.
+
+    A shared keyword list ("password"/"login"/"found"/...) is NOT reliable:
+    confirmed against a real target that medusa prints "Password: X" for
+    EVERY attempted password whether it works or not, so a generic
+    "password" match reported a full 999-word failed brute-force run as a
+    successful breach. searchsploit's own boilerplate footer ("Shellcodes:
+    No Results") separately matched "shell" for the same reason. Recon/
+    lookup tools (searchsploit, nmap, gobuster, nikto, ...) are excluded
+    entirely -- they can never themselves indicate a landed exploit -- and
+    each remaining tool is checked against its own real, specific success
+    marker instead of a word that also appears in ordinary failure output.
+    """
+    if tool == "run_hydra":
+        # Hydra only prints a "[port][service] host: ... login: ...
+        # password: ..." line for an actual hit -- unlike medusa/ncrack it
+        # does not echo per-attempt progress to stdout by default.
+        return bool(re.search(r"\[\d+\]\[\w+\]\s+host:.*login:.*password:", output, re.IGNORECASE))
+    if tool == "run_medusa":
+        return "ACCOUNT FOUND" in output
+    if tool == "run_ncrack":
+        return "Discovered credentials" in output
+    if tool == "run_john":
+        m = re.search(r"(\d+)\s+password hash(?:es)?\s+crack", output, re.IGNORECASE)
+        return bool(m) and int(m.group(1)) > 0
+    if tool == "run_sqlmap":
+        lowered = output.lower()
+        return "is vulnerable" in lowered or "the back-end dbms is" in lowered
+    return False
 
 
 def bootstrap():
@@ -320,7 +356,7 @@ def run_attack_loop(target, memory, cache=None):
                 log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {step.get('tool')}")
                 continue
             output, ok = execute_step(step)
-            if ok and output and step.get("tool") in EXPLOIT_TOOLS and SUCCESS_KEYWORDS.search(output):
+            if ok and output and _detect_exploit_success(step.get("tool"), output):
                 success = True
                 if cache:
                     cache.record_success(step)

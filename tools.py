@@ -146,12 +146,18 @@ class ToolExecutor:
         return self._execute_command(command)
 
     def _run_hydra(self, target, service, username, wordlist, threads):
-        if not target or not service or not username or not wordlist:
+        if not target or not service:
             return {
                 "status": "error",
                 "error_type": "invalid_params",
-                "message": "Missing parameters: target, service, username, and wordlist are required",
+                "message": "Missing parameters: target and service are required",
             }
+        # Same defaulting pattern _run_ncrack already uses for its username
+        # equivalent ("users") -- the model reliably omits username/wordlist
+        # for credential tools despite explicit prompt instructions not to
+        # (confirmed repeatedly against a real model), so don't depend on it.
+        username = username or "admin"
+        wordlist = wordlist or "/usr/share/seclists/Passwords/Common-Credentials/darkweb2017_top-1000.txt"
         command = f"hydra -l {username} -P {wordlist} -t {threads} -I {service}://{target}"
         return self._execute_command(command)
 
@@ -313,8 +319,10 @@ class ToolExecutor:
         return self._execute_command(command)
 
     def _run_medusa(self, target, service, username, wordlist):
-        if not target or not username:
-            return {"status": "error", "error_type": "invalid_params", "message": "No target or username specified"}
+        if not target:
+            return {"status": "error", "error_type": "invalid_params", "message": "No target specified"}
+        # See _run_hydra's comment -- same defaulting pattern as _run_ncrack.
+        username = username or "admin"
         wordlist = wordlist or "/usr/share/seclists/Passwords/Common-Credentials/darkweb2017_top-1000.txt"
         command = f"medusa -h {target} -u {username} -P {wordlist} -M {service} -t 4"
         return self._execute_command(command)
@@ -371,7 +379,9 @@ class ToolExecutor:
         wordlist = wordlist or "/usr/share/seclists/Discovery/Web-Content/common.txt"
         if param not in url:
             url = url + f"/{param}"
-        command = f"ffuf -u {url} -w {wordlist} -mc 200,301,302,403 -silent"
+        # -s, not -silent -- confirmed against the real installed ffuf binary
+        # (`ffuf -h`); the old flag name was rejected outright at runtime.
+        command = f"ffuf -u {url} -w {wordlist} -mc 200,301,302,403 -s"
         return self._execute_command(command)
 
     def _run_httpx(self, target, flags):
