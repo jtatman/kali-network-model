@@ -409,11 +409,18 @@ class ToolExecutor:
         just be a second, narrower copy of what msfconsole itself already
         accepts. `exit -y` is appended (if not already present) so the
         console always terminates instead of hanging on stdin.
+
+        The exec target has no init system (no systemd), so postgresql
+        doesn't come back up on its own after a container restart --
+        `service postgresql start` is prepended defensively on every call
+        (it's a no-op, not an error, if already running) so db-backed
+        `search`/workspace/session tracking stays available without a
+        separate provisioning step.
         """
         if not commands:
             return {"status": "error", "error_type": "invalid_params", "message": "No msfconsole commands specified"}
         script = commands.strip().rstrip(";").strip()
         if not script.endswith("exit") and "exit -y" not in script:
             script += "; exit -y"
-        command = f"msfconsole -q -x {shlex.quote(script)}"
+        command = f"service postgresql start >/dev/null 2>&1; msfconsole -q -x {shlex.quote(script)}"
         return self._execute_command(command)
