@@ -10,10 +10,18 @@ Flask app/route here -- mcp_server.py as a standalone listening service is
 retired; agent.py calls ToolExecutor.execute_tool() directly, in-process.
 """
 
+import re
 import shlex
 
 import remote_exec
 from config import CONFIG
+
+# Models occasionally fold masscan's separate `ports` field into `target`
+# using CIDR-slash notation, e.g. "10.50.0.5/20-65535" instead of
+# target="10.50.0.5", ports="20-65535" -- a real IPv4 CIDR suffix is 0-32,
+# so anything else (a bare number outside that range, or an "N-M" range) is
+# almost certainly a misplaced port spec rather than a subnet mask.
+_MASSCAN_TARGET_PORT_LEAK_RE = re.compile(r'^(?P<host>.+)/(?P<suffix>\d+-\d+|\d+)$')
 
 SUPPORTED_TOOLS = [
     "run_command", "run_masscan", "run_nmap", "run_netstat",
@@ -112,8 +120,25 @@ class ToolExecutor:
     def _run_masscan(self, target, ports, rate):
         if not target:
             return {"status": "error", "error_type": "invalid_params", "message": "No target specified for masscan"}
+        target, ports = self._recover_masscan_target_ports(target, ports)
         command = f"masscan {target} -p {ports} --rate {rate}"
         return self._execute_command(command)
+
+    @staticmethod
+    def _recover_masscan_target_ports(target, ports):
+        """Split a model-hallucinated "target/portrange" string back into
+        real target + ports, recovering the model's evident intent instead
+        of either failing outright or silently dropping the requested ports
+        in favor of the "1-65535" default. See _MASSCAN_TARGET_PORT_LEAK_RE.
+        """
+        match = _MASSCAN_TARGET_PORT_LEAK_RE.match(target)
+        if not match:
+            return target, ports
+        suffix = match.group("suffix")
+        is_real_cidr = suffix.isdigit() and 0 <= int(suffix) <= 32
+        if is_real_cidr:
+            return target, ports
+        return match.group("host"), suffix
 
     def _run_nmap(self, target, flags):
         if not target:

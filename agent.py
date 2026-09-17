@@ -72,11 +72,21 @@ HYDRA WORDLISTS - use these in order of speed:
 CVE / KNOWN-EXPLOIT WORKFLOW: whenever recon (nmap -sV) identifies a
 service name AND version string, that is a strong signal to check for known
 vulnerabilities before trying blind credential brute force:
-  1. run_searchsploit with "keyword" = "<service> <version>" e.g. "vsftpd 2.3.4"
-  2. If a real, specific matching exploit appears in the results (or you
+  1. If you intend to follow up with run_metasploit, do the lookup with
+     run_metasploit itself FIRST: commands="search <service> <version>" or
+     "search cve:<CVE-ID>" (search only -- no "use" yet). This queries
+     Metasploit's own module database, so any hit is a real, exact module
+     path you can copy verbatim into your next run_metasploit step. Do NOT
+     invent a module path from memory -- if you cannot search first, say so
+     via run_command/recon instead of guessing a path that may not exist.
+  2. run_searchsploit with "keyword" = "<service> <version>" is a separate,
+     broader database of raw PoC scripts/binaries, NOT Metasploit module
+     names -- useful when no Metasploit module exists, but its results
+     belong in run_command (e.g. fetch and run the PoC script), never
+     copied in as a run_metasploit module path.
+  3. If a real, specific matching exploit appears in the results (or you
      already know the module path), follow up with run_metasploit to
-     actually attempt it -- searchsploit only tells you an exploit exists,
-     it does not run anything itself.
+     actually attempt it -- a search alone does not run anything.
 This applies to every service with a detected version, not just unusual
 ones -- do this before or alongside credential brute force, not instead of
 picking a real tool.
@@ -318,6 +328,40 @@ def extract_ports(output):
     return found
 
 
+# A freeform goal that explicitly restricts scanning to a port subset (e.g.
+# "restrict all scanning ... to only ports 21, 80, and 443") is NOT reliably
+# honored by either registered model as a single planned `chain` -- verified
+# empirically in reports/stage3_model_burndown_20260916.md, finding #4 (one
+# model widened the range instead of narrowing it, the other ignored the
+# restriction entirely). The only pathway that reliably respects an explicit
+# port list is the deterministic `run_full_engagement(ports=...)` used by
+# the `engage <target> <ports>` REPL command -- so detect this same intent
+# in freeform text and route to that pathway instead of trusting the model.
+_TARGET_HOST_RE = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b')
+_PORT_SCOPE_RE = re.compile(
+    r'\b(?:only|restrict\w*|limit\w*|just)\b.{0,40}?\bports?\b[^.]{0,40}?'
+    r'((?:\d{1,5}(?:\s*,?\s*(?:and\s+)?)?)+)',
+    re.IGNORECASE,
+)
+
+
+def detect_scoped_engagement(goal):
+    """Returns (target, ports) if `goal` both names a target and explicitly
+    restricts scanning to specific ports, else None. See module comment
+    above `_PORT_SCOPE_RE` for why this exists instead of just trusting the
+    model to honor the restriction itself."""
+    scope_match = _PORT_SCOPE_RE.search(goal)
+    if not scope_match:
+        return None
+    target_match = _TARGET_HOST_RE.search(goal)
+    if not target_match:
+        return None
+    ports = re.findall(r'\d{1,5}', scope_match.group(1))
+    if not ports:
+        return None
+    return target_match.group(0), ",".join(ports)
+
+
 def execute_step(step):
     tool = step.get("tool", "unknown")
     params = {k: v for k, v in step.items() if k != "tool"}
@@ -407,9 +451,13 @@ def run_attack_loop(target, memory, cache=None):
             memory.mark_tried(port, success=False)
             continue
         success = False
-        for step in chain:
+        corrected_once = False
+        i = 0
+        while i < len(chain):
+            step = chain[i]
             if cache and not cache.should_attempt(step):
                 log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {step.get('tool')}")
+                i += 1
                 continue
             output, ok = execute_step(step)
             if ok and output and _detect_exploit_success(step.get("tool"), output):
@@ -421,6 +469,12 @@ def run_attack_loop(target, memory, cache=None):
                 if cache:
                     reason = f"tool={step.get('tool')} port={port} output_empty={not bool(output)}"
                     cache.record_failure(step, reason=reason)
+            if not corrected_once:
+                correction = _maybe_correct_exploit_selection(goal, chain, i, step, output)
+                if correction is not None:
+                    chain = chain[:i + 1] + correction
+                    corrected_once = True
+            i += 1
         memory.mark_tried(port, success=success)
     log.info("[ATTACK] Attack loop complete")
     summary = memory.summary()
@@ -443,15 +497,96 @@ def run_full_engagement(target, ports=None):
     return memory
 
 
-def execute_chain(chain, cache=None):
-    for i, step in enumerate(chain, 1):
-        log.info(f"[CHAIN] 🔗 Step {i} of {len(chain)}: {step.get('tool')}")
+_ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def compress_tool_output(output, max_lines=15):
+    """Deterministic, non-semantic compression for feeding a tool's raw
+    output back into a follow-up model prompt -- NOT an LLM-generated
+    summary. The whole point of the follow-up call (see
+    _maybe_correct_exploit_selection) is to get an exact string back (a
+    real Metasploit module path, a real CVE id); running the output through
+    another model call to "summarize" it first would reintroduce the same
+    hallucination/paraphrasing risk this exists to eliminate. Stripping
+    ANSI color codes and capping to the first `max_lines` (search/module
+    tables rank best matches first) preserves every surviving string
+    byte-for-byte.
+    """
+    if not output:
+        return output
+    clean = _ANSI_ESCAPE_RE.sub("", output)
+    lines = clean.splitlines()
+    if len(lines) <= max_lines:
+        return clean
+    return "\n".join(lines[:max_lines]) + f"\n... ({len(lines) - max_lines} more lines omitted)"
+
+
+def _is_search_only_metasploit(commands):
+    """True if a run_metasploit `commands` string only queries the module
+    database (msfconsole's own `search`) without committing to `use`/`run`/
+    `exploit` -- i.e. the model is still looking, not yet acting."""
+    lowered = f" {commands.lower()} "
+    return "search" in lowered and " use " not in lowered and "exploit -" not in lowered
+
+
+def _maybe_correct_exploit_selection(goal, chain, idx, step, output):
+    """If `step` was a lookup step (run_searchsploit, or a search-only
+    run_metasploit call) and the model's own planned chain includes a later
+    run_metasploit step, that later step was authored blind -- before this
+    lookup ever ran, since a whole chain is planned in one model response.
+    reports/stage3_model_burndown_20260916.md confirmed this reliably
+    produces a hallucinated or CVE-mismatched module name even when the
+    correct answer was sitting in the lookup's own output the model never
+    got to read. Re-queries the model with the REAL (compressed) result and
+    returns a corrected remainder chain to splice in, or None if no
+    correction applies here.
+    """
+    if not goal or not output:
+        return None
+    tool = step.get("tool")
+    is_lookup_step = tool == "run_searchsploit" or (
+        tool == "run_metasploit" and _is_search_only_metasploit(step.get("commands", ""))
+    )
+    if not is_lookup_step:
+        return None
+    remaining = chain[idx + 1:]
+    if not any(s.get("tool") == "run_metasploit" for s in remaining):
+        return None
+    followup_goal = (
+        f"{goal}\n\n"
+        f"You already ran {tool} with params {step} and got this REAL result:\n"
+        f"{compress_tool_output(output)}\n\n"
+        f"Based on these actual results (not a guess), give the exact next tool "
+        f"call to exploit this -- use the real module name/path shown above, "
+        f"never an invented one."
+    )
+    log.info(
+        f"[CHAIN] 🔎 Re-querying model with real {tool} results before continuing "
+        f"(the rest of this chain was planned blind, before {tool} ran)"
+    )
+    corrected = call_model(followup_goal)
+    return corrected.get("chain", [])
+
+
+def execute_chain(chain, cache=None, goal=None):
+    corrected_once = False
+    i = 0
+    while i < len(chain):
+        step = chain[i]
+        log.info(f"[CHAIN] 🔗 Step {i + 1} of {len(chain)}: {step.get('tool')}")
         if cache and not cache.should_attempt(step):
             log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {step.get('tool')}")
+            i += 1
             continue
         output, ok = execute_step(step)
         if not ok and cache:
-            cache.record_failure(step, reason=f"manual chain failure, step {i}")
+            cache.record_failure(step, reason=f"manual chain failure, step {i + 1}")
+        if not corrected_once:
+            correction = _maybe_correct_exploit_selection(goal, chain, i, step, output)
+            if correction is not None:
+                chain = chain[:i + 1] + correction
+                corrected_once = True
+        i += 1
 
 
 def main():
@@ -488,12 +623,23 @@ def main():
                 run_full_engagement(target, ports=ports)
                 log.info("[REPORT] 📝 Engagement complete — generating report")
             else:
-                data = call_model(goal)
-                chain = data.get("chain", [])
-                if chain:
-                    execute_chain(chain, cache=cache)
+                scoped = detect_scoped_engagement(goal)
+                if scoped:
+                    target, ports = scoped
+                    log.info(
+                        f"[GOAL] 🎯 Detected explicit port-scope restriction in freeform "
+                        f"goal — routing to deterministic engagement instead of a single "
+                        f"model-planned chain (target={target}, ports={ports})"
+                    )
+                    run_full_engagement(target, ports=ports)
+                    log.info("[REPORT] 📝 Engagement complete — generating report")
                 else:
-                    log.warning("[FAIL] 😤💀 No tool chain generated")
+                    data = call_model(goal)
+                    chain = data.get("chain", [])
+                    if chain:
+                        execute_chain(chain, cache=cache, goal=goal)
+                    else:
+                        log.warning("[FAIL] 😤💀 No tool chain generated")
         except KeyboardInterrupt:
             log.info("[START] Interrupted by user")
             break
