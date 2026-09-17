@@ -56,11 +56,61 @@ def _build_remote_command(command, retry_with_sudo):
     return command
 
 
+def _run_local_docker(command, timeout, retry_with_sudo):
+    """local_docker mode: `docker exec` straight from this machine's own
+    Docker CLI/socket, no SSH, no network route to the container's IP
+    needed -- see config.py's EXEC_MODE comment for why this exists."""
+    if retry_with_sudo and not command.strip().startswith("sudo"):
+        command = f"sudo {command}"
+    argv = ["docker", "exec", CONFIG.DOCKER_CONTAINER, "sh", "-c", command]
+    exec_timeout = timeout if timeout is not None else CONFIG.EXEC_TIMEOUT_SECONDS
+
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=exec_timeout)
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "error_type": "ssh_timeout",  # same bucket as the SSH path's timeout -- callers treat it identically
+            "message": f"docker exec timed out after {exec_timeout}s",
+            "recovery_suggestion": "Reduce scan scope/timeout, or check the container isn't hung.",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_type": "ssh_client_error",
+            "message": str(e),
+            "recovery_suggestion": "Check that the local `docker` binary is installed and on PATH.",
+        }
+
+    if result.returncode == 0:
+        return {"status": "success", "stdout": result.stdout.strip(), "stderr": result.stderr.strip()}
+
+    # Docker's own errors (container missing/not running/daemon unreachable)
+    # are always prefixed this way and happen before the command inside the
+    # container ever runs -- distinct from the inner shell's own failure.
+    if "error response from daemon" in result.stderr.lower() or "cannot connect to the docker daemon" in result.stderr.lower():
+        return {
+            "status": "error",
+            "error_type": "ssh_connection_failed",  # same bucket as the SSH path's connection failure
+            "message": result.stderr.strip(),
+            "recovery_suggestion": (
+                f"Check DOCKER_CONTAINER={CONFIG.DOCKER_CONTAINER!r} exists and is running "
+                "(`docker ps`), and that the Docker daemon is reachable."
+            ),
+        }
+
+    return _classify_failure(result, command, retry_with_sudo, timeout)
+
+
 def run(command, timeout=None, retry_with_sudo=False):
     """Execute `command` on the configured remote target (CONFIG.EXEC_MODE:
     "direct" runs it on the Kali box's own shell, "docker" runs it inside
-    CONFIG.DOCKER_CONTAINER on that box).
+    CONFIG.DOCKER_CONTAINER on that box via SSH, "local_docker" runs it in
+    CONFIG.DOCKER_CONTAINER via this machine's own `docker exec`, no SSH).
     """
+    if CONFIG.EXEC_MODE == "local_docker":
+        return _run_local_docker(command, timeout, retry_with_sudo)
+
     remote_command = _build_remote_command(command, retry_with_sudo)
     argv = _base_ssh_argv() + [remote_command]
 
@@ -100,19 +150,28 @@ def run(command, timeout=None, retry_with_sudo=False):
             ),
         }
 
+    return _classify_failure(result, command, retry_with_sudo, timeout)
+
+
+def _classify_failure(result, command, retry_with_sudo, timeout):
     stderr = result.stderr.lower()
 
     # BatchMode=yes means there is no terminal for an interactive sudo
     # password prompt -- without this fast-fail it would hang to the full
     # timeout instead of failing in milliseconds.
     if "a password is required" in stderr or "a terminal is required" in stderr:
+        target = (
+            f"container {CONFIG.DOCKER_CONTAINER!r}"
+            if CONFIG.EXEC_MODE == "local_docker"
+            else f"{CONFIG.SSH_USER} on {CONFIG.SSH_HOST}"
+        )
         return {
             "status": "error",
             "error_type": "sudo_requires_password",
             "message": result.stderr.strip(),
             "recovery_suggestion": (
-                f"Configure NOPASSWD sudo for {CONFIG.SSH_USER} on {CONFIG.SSH_HOST} -- "
-                "BatchMode SSH has no terminal for an interactive sudo password prompt."
+                f"Configure NOPASSWD sudo (or run as root) for {target} -- "
+                "no terminal is available for an interactive sudo password prompt."
             ),
         }
 

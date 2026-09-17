@@ -33,7 +33,13 @@ class Config:
         self.CACHE_DIR = _get("CACHE_DIR", "./.cache")
         self.REPORT_DIR = _get("REPORT_DIR", "./reports")
 
-        # Remote execution: EXEC_MODE selects "direct" SSH or SSH + "docker" exec
+        # Remote execution: EXEC_MODE selects "direct" SSH, SSH + "docker" exec,
+        # or "local_docker" -- `docker exec` run straight from this machine's
+        # own Docker CLI/socket, no SSH at all. local_docker exists because
+        # Docker Desktop (Windows/WSL2 backend) does not route the orchestrator
+        # host's network stack into container-internal IPs -- only published
+        # ports and the Docker API/socket are reachable, and `docker exec`
+        # already goes through the latter. See remote_exec.py.
         self.EXEC_MODE = _get("EXEC_MODE")
         self.SSH_HOST = _get("SSH_HOST")
         self.SSH_USER = _get("SSH_USER")
@@ -60,16 +66,17 @@ class Config:
         if not self.OLLAMA_MODEL:
             errors.append("OLLAMA_MODEL is required (must match a model registered via 'ollama create')")
 
-        if self.EXEC_MODE not in ("direct", "docker"):
-            errors.append("EXEC_MODE must be 'direct' or 'docker'")
-        if not self.SSH_HOST:
-            errors.append("SSH_HOST is required")
-        if not self.SSH_USER:
-            errors.append("SSH_USER is required")
-        if not self.SSH_KEY_PATH:
-            errors.append("SSH_KEY_PATH is required")
-        if self.EXEC_MODE == "docker" and not self.DOCKER_CONTAINER:
-            errors.append("DOCKER_CONTAINER is required when EXEC_MODE=docker")
+        if self.EXEC_MODE not in ("direct", "docker", "local_docker"):
+            errors.append("EXEC_MODE must be 'direct', 'docker', or 'local_docker'")
+        if self.EXEC_MODE in ("direct", "docker"):
+            if not self.SSH_HOST:
+                errors.append("SSH_HOST is required")
+            if not self.SSH_USER:
+                errors.append("SSH_USER is required")
+            if not self.SSH_KEY_PATH:
+                errors.append("SSH_KEY_PATH is required")
+        if self.EXEC_MODE in ("docker", "local_docker") and not self.DOCKER_CONTAINER:
+            errors.append(f"DOCKER_CONTAINER is required when EXEC_MODE={self.EXEC_MODE}")
 
         if self.REMOTE_WRITE_MODE not in ("remote", "local"):
             errors.append("REMOTE_WRITE_MODE must be 'remote' or 'local'")
