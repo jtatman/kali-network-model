@@ -517,6 +517,7 @@ def _run_chain_against_port(chain, port, memory, cache, goal):
 _DIR_LISTING_SIGNATURE = re.compile(r"<title>Index of ", re.IGNORECASE)
 _HREF_RE = re.compile(r'href="([^"?][^"]*)"', re.IGNORECASE)
 _GOBUSTER_DIR_RE = re.compile(r"^(\S+)\s+\(Status:\s*301\)", re.MULTILINE)
+_GOBUSTER_FILE_RE = re.compile(r"^(\S+)\s+\(Status:\s*200\)", re.MULTILINE)
 _NIKTO_INDEXING_RE = re.compile(r"\+\s*\[\d+\]\s*(/\S+?):\s*Directory indexing found", re.IGNORECASE)
 _SECRET_PATTERNS = re.compile(
     r"(db_password|password|passwd|secret_key|api_key|access_key|"
@@ -524,8 +525,33 @@ _SECRET_PATTERNS = re.compile(
     r"authorization:\s*bearer)",
     re.IGNORECASE,
 )
+_GIT_HEAD_SIGNATURE = re.compile(r"^ref:\s*refs/", re.IGNORECASE)
+_ROBOTS_DISALLOW_RE = re.compile(r"^Disallow:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
+_SENSITIVE_NAME_RE = re.compile(
+    r"(config|setting|secret|password|passwd|\benv\b|\bdb\b|database|backup|admin|credential)",
+    re.IGNORECASE,
+)
 MAX_AUTO_CURL_DIRS = 3
 MAX_AUTO_CURL_FILES_PER_DIR = 5
+MAX_ROBOTS_FOLLOWUPS = 5
+MAX_BACKUP_CANDIDATE_FILES = 3
+# Well-known sensitive paths worth trying on every web target regardless of
+# what any wordlist happened to contain -- generic wordlists like
+# seclists' common.txt do not include dotfiles by default, so these would
+# otherwise never surface even when they're the single most common real
+# secret-disclosure vector (leaked .env files, exposed .git metadata).
+_WELL_KNOWN_SENSITIVE_PATHS = ["/.env", "/.git/HEAD", "/.git/config"]
+# Common backup/editor-swap suffixes worth trying against any discovered
+# file whose name suggests it's sensitive -- this generalizes past the
+# lucky case (directory indexing happened to be on) to the much more
+# common real case: indexing is off, but someone still left config.php.bak
+# or config.php~ sitting next to the live file.
+_BACKUP_SUFFIXES = [".bak", ".old", ".orig", ".save", ".swp", "~", ".dist", ".example"]
+# Gates the once-per-port pre-flight probe (well-known paths + robots.txt)
+# to ports actually worth an HTTP request -- avoids noisy connection-refused
+# curl attempts against e.g. FTP/DNS/SMTP ports found on the other 8
+# containers this session is about to investigate.
+_COMMON_WEB_PORTS = {"80", "443", "8000", "8008", "8080", "8081", "8443", "3000", "5000", "8888"}
 
 
 def _extract_directory_leads(base_url, tool, output):
@@ -546,21 +572,44 @@ def _extract_directory_leads(base_url, tool, output):
     return leads
 
 
-def _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs):
-    """After a round's model-planned chain runs, deterministically fetch
-    any indexed directories it (or nikto) found, and any files listed
-    inside them, checking each for an obvious leaked secret. Returns
-    (success, escalation_log_lines) in the same shape _run_chain_against_port
-    returns, so it can be folded into the same round history.
-    """
+def _scan_content_for_secret(url, output, port, memory, log_lines, source):
+    """Deterministic (regex, not LLM) check of already-fetched content for
+    an obvious leaked secret. Records a finding and returns True on a hit."""
+    if output and _SECRET_PATTERNS.search(output):
+        memory.add_finding(port, f"run_curl (auto {source})", f"{url}:\n{compress_tool_output(output, max_lines=20)}")
+        log.info(f"[SUCCESS] 🎉😄 Auto-escalation found a real secret at {url}")
+        log_lines.append(
+            f"  [auto-curl:{source}] {url}: LEAKED CREDENTIALS/SECRET -- {compress_tool_output(output, max_lines=5)}"
+        )
+        return True
+    log_lines.append(f"  [auto-curl:{source}] {url}: fetched, no secret pattern matched")
+    return False
+
+
+def _fetch_and_scan(url, port, memory, cache, log_lines, source):
+    """Fetch `url` via the real run_curl tool (not assumed/simulated) and
+    scan it for a leaked secret. Returns (found_secret, raw_output)."""
+    step = {"tool": "run_curl", "url": url, "method": "GET"}
+    if cache and not cache.should_attempt(step):
+        return False, None
+    output, ok = execute_step(step)
+    if not ok or not output:
+        return False, output
+    found = _scan_content_for_secret(url, output, port, memory, log_lines, source)
+    if found and cache:
+        cache.record_success(step)
+    return found, output
+
+
+def _escalate_directory_listings(base_url, port, memory, cache, step_outputs, log_lines):
+    """Fetch any indexed directories gobuster/nikto found, and every file
+    listed inside them (kali-network-model-co9's original, grounded-in-a-
+    real-target case: DVWA's /config/ listing exposes config.inc.php.bak
+    with live DB credentials)."""
     leads = set()
     for tool, output in step_outputs:
         leads |= _extract_directory_leads(base_url, tool, output)
-    if not leads:
-        return False, []
-
     success = False
-    log_lines = []
     for dir_url in sorted(leads)[:MAX_AUTO_CURL_DIRS]:
         dir_step = {"tool": "run_curl", "url": dir_url, "method": "GET"}
         if cache and not cache.should_attempt(dir_step):
@@ -575,26 +624,105 @@ def _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs)
         memory.add_finding(port, "run_curl (auto directory-listing)", f"{dir_url} exposes: {files}")
         for fname in files[:MAX_AUTO_CURL_FILES_PER_DIR]:
             file_url = dir_url.rstrip("/") + "/" + fname
-            file_step = {"tool": "run_curl", "url": file_url, "method": "GET"}
-            if cache and not cache.should_attempt(file_step):
-                continue
             log.info(f"[ESCALATE] 🔗 Auto-fetching listed file: {file_url}")
-            file_output, file_ok = execute_step(file_step)
-            if file_ok and file_output and _SECRET_PATTERNS.search(file_output):
-                success = True
-                if cache:
-                    cache.record_success(file_step)
-                memory.add_finding(
-                    port, "run_curl (auto secret-leak)",
-                    f"{file_url}:\n{compress_tool_output(file_output, max_lines=20)}",
-                )
-                log.info(f"[SUCCESS] 🎉😄 Auto-escalation found a real secret at {file_url}")
-                log_lines.append(
-                    f"  [auto-curl] {file_url}: LEAKED CREDENTIALS/SECRET -- "
-                    f"{compress_tool_output(file_output, max_lines=5)}"
-                )
-            elif file_ok and file_output:
-                log_lines.append(f"  [auto-curl] {file_url}: fetched, no secret pattern matched")
+            found, _ = _fetch_and_scan(file_url, port, memory, cache, log_lines, "directory-listing-file")
+            success = success or found
+    return success
+
+
+def _escalate_backup_files(base_url, port, memory, cache, step_outputs, log_lines):
+    """For files gobuster/ffuf found directly (status 200) whose name
+    suggests they're sensitive, try common backup/editor-swap suffixes
+    against them -- covers the much more common real case where directory
+    indexing is off but a stray .bak/.old/~ file was left in place."""
+    candidates = []
+    for tool, output in step_outputs:
+        if tool not in ("run_gobuster", "run_ffuf") or not output:
+            continue
+        for name in _GOBUSTER_FILE_RE.findall(output):
+            if _SENSITIVE_NAME_RE.search(name) and name not in candidates:
+                candidates.append(name)
+    success = False
+    for name in candidates[:MAX_BACKUP_CANDIDATE_FILES]:
+        for suffix in _BACKUP_SUFFIXES:
+            url = f"{base_url.rstrip('/')}/{name}{suffix}"
+            log.info(f"[ESCALATE] 🔗 Auto-probing backup-file guess: {url}")
+            found, _ = _fetch_and_scan(url, port, memory, cache, log_lines, "backup-guess")
+            success = success or found
+    return success
+
+
+def _escalate_robots_txt(base_url, port, memory, cache, log_lines):
+    """Fetch robots.txt once and follow every Disallow'd path -- a classic
+    lead source generic wordlists won't reproduce, since these are paths
+    the site operator themselves pointed at."""
+    url = base_url.rstrip("/") + "/robots.txt"
+    step = {"tool": "run_curl", "url": url, "method": "GET"}
+    if cache and not cache.should_attempt(step):
+        return False
+    output, ok = execute_step(step)
+    if not ok or not output:
+        return False
+    disallowed = _ROBOTS_DISALLOW_RE.findall(output)
+    if not disallowed:
+        return False
+    log_lines.append(f"  [auto-curl:robots.txt] Disallow entries: {disallowed[:10]}")
+    memory.add_finding(port, "run_curl (auto robots.txt)", f"Disallow entries: {disallowed}")
+    success = False
+    for path in disallowed[:MAX_ROBOTS_FOLLOWUPS]:
+        target_url = base_url.rstrip("/") + "/" + path.lstrip("/")
+        dstep = {"tool": "run_curl", "url": target_url, "method": "GET"}
+        if cache and not cache.should_attempt(dstep):
+            continue
+        log.info(f"[ESCALATE] 🔗 Auto-following robots.txt Disallow entry: {target_url}")
+        doutput, dok = execute_step(dstep)
+        if dok and doutput and _DIR_LISTING_SIGNATURE.search(doutput):
+            files = [f for f in _HREF_RE.findall(doutput) if not f.startswith("?") and f != "/" and not f.endswith("/")]
+            log_lines.append(f"  [auto-curl:robots.txt] {target_url}: directory listing exposed, files: {files[:10]}")
+            memory.add_finding(port, "run_curl (auto robots.txt-listing)", f"{target_url} exposes: {files}")
+            for fname in files[:MAX_AUTO_CURL_FILES_PER_DIR]:
+                file_url = target_url.rstrip("/") + "/" + fname
+                found, _ = _fetch_and_scan(file_url, port, memory, cache, log_lines, "robots.txt-file")
+                success = success or found
+        elif dok and doutput:
+            success = _scan_content_for_secret(target_url, doutput, port, memory, log_lines, "robots.txt-path") or success
+    return success
+
+
+def _run_deterministic_preflight(base_url, port, memory, cache):
+    """Runs ONCE per port, before the model gets a single round: well-known
+    sensitive paths and robots.txt cost only a handful of requests and
+    never change between rounds, so there's no reason to gate them behind
+    (or repeat them across) model-planned chains. Returns
+    (success, log_lines)."""
+    log_lines = []
+    success = False
+    for path in _WELL_KNOWN_SENSITIVE_PATHS:
+        url = base_url.rstrip("/") + path
+        log.info(f"[ESCALATE] 🔗 Pre-flight probe: {url}")
+        found, output = _fetch_and_scan(url, port, memory, cache, log_lines, "well-known-path")
+        if not found and output and _GIT_HEAD_SIGNATURE.search(output):
+            memory.add_finding(port, "run_curl (auto well-known-path)", f"{url}: exposed .git repository (HEAD readable)")
+            log_lines.append(f"  [auto-curl:well-known-path] {url}: .git repository exposed (source disclosure)")
+            found = True
+        success = success or found
+    success = _escalate_robots_txt(base_url, port, memory, cache, log_lines) or success
+    return success, log_lines
+
+
+def _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs):
+    """After a round's model-planned chain runs, deterministically follow
+    up on what it (or nikto) found: indexed directories and their listed
+    files, plus backup-suffix guesses against sensitive-sounding discovered
+    files. Returns (success, escalation_log_lines) in the same shape
+    _run_chain_against_port returns, so it folds into the same round
+    history.
+    """
+    if not step_outputs:
+        return False, []
+    log_lines = []
+    success = _escalate_directory_listings(base_url, port, memory, cache, step_outputs, log_lines)
+    success = _escalate_backup_files(base_url, port, memory, cache, step_outputs, log_lines) or success
     return success, log_lines
 
 
@@ -610,8 +738,15 @@ def run_attack_loop(target, memory, cache=None):
         )
         base_url = f"http://{target}" if str(port) == "80" else f"http://{target}:{port}"
         success = False
-        seen_chain_signatures = set()
         history = []
+        if str(port) in _COMMON_WEB_PORTS:
+            success, preflight_log_lines = _run_deterministic_preflight(base_url, port, memory, cache)
+            if preflight_log_lines:
+                log.info(f"[ESCALATE] Pre-flight probe on port {port} (.env/.git/robots.txt, before any model round):\n" + "\n".join(preflight_log_lines))
+                history.append("Pre-flight:\n" + "\n".join(preflight_log_lines))
+            if success:
+                log.info(f"[ATTACK] Port {port}: deterministic pre-flight found a real breach -- skipping model rounds entirely")
+        seen_chain_signatures = set()
         round_num = 1
         while round_num <= MAX_ATTACK_ROUNDS and not success:
             if round_num == 1:
