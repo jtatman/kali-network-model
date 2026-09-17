@@ -113,7 +113,9 @@ progress. Pick a REAL exploitation/enumeration tool based on the port:
   often more direct than credential brute force.
 
 Respond with a tool chain using each tool's REAL parameter names from the list
-above, e.g.: {"chain": [{"tool": "run_nmap", "target": "10.0.0.5", "flags": "-sV"}]}
+above. Format example (a web-port EXPLOIT chain, not a re-scan -- this is
+the shape your response should take when the goal says "exploit this
+port"): {"chain": [{"tool": "run_gobuster", "target": "http://10.0.0.5", "mode": "dir"}, {"tool": "run_sqlmap", "target": "http://10.0.0.5/login.php?id=1", "level": "2", "risk": "1"}]}
 Never invent generic names like "param1"/"param2" -- use the exact names listed above."""
 
 # Constrains chain[].tool to a real, current tool name -- the model can no
@@ -434,47 +436,235 @@ def run_recon(target, memory, ports=None):
                 log.warning("[SCAN] 😤💀 No ports found in output")
 
 
+# How many times the model gets to re-plan against the SAME port after a
+# chain finishes with no landed exploit. Added because single-shot planning
+# (one model call -> one chain -> done) was confirmed to silently discard
+# real recon findings: on a real DVWA run, run_gobuster/run_nikto found an
+# indexable /config/ directory and a login.php redirect chain, neither tool
+# counts as an "exploit" by design (_detect_exploit_success excludes recon
+# tools on purpose), and the loop just gave up on the port with that lead
+# sitting unused. This lets the model see its own prior results and decide
+# whether to keep pulling the thread -- capped, not unbounded, specifically
+# so a repeated/empty response (the model's own "nothing left" signal) is
+# visible and stops the loop rather than running forever against a genuine
+# dead end.
+MAX_ATTACK_ROUNDS = 5
+
+
+def _run_chain_against_port(chain, port, memory, cache, goal):
+    """Execute one model-planned chain against a port (identical step-
+    execution logic to before this function existed -- extracted so
+    run_attack_loop can call it once per round). Returns (success,
+    round_log_lines): round_log_lines is a compact, deterministic per-step
+    record (tool + real compressed output) meant to be fed verbatim into a
+    follow-up round's prompt, not an LLM-generated summary -- same reasoning
+    as compress_tool_output's own docstring.
+    """
+    success = False
+    corrected_once = False
+    round_log_lines = []
+    step_outputs = []
+    i = 0
+    while i < len(chain):
+        step = chain[i]
+        tool = step.get("tool")
+        if cache and not cache.should_attempt(step):
+            log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {tool}")
+            round_log_lines.append(f"  [{tool}] SKIPPED (permanently blocked by an earlier identical failure)")
+            i += 1
+            continue
+        output, ok = execute_step(step)
+        if ok and output:
+            step_outputs.append((tool, output))
+        exploited = bool(ok and output and _detect_exploit_success(tool, output))
+        if exploited:
+            success = True
+            if cache:
+                cache.record_success(step)
+            memory.add_finding(port, tool, output)
+        elif not ok:
+            if cache:
+                reason = f"tool={tool} port={port} output_empty={not bool(output)}"
+                cache.record_failure(step, reason=reason)
+        status = "EXPLOIT SUCCESS" if exploited else ("ran, no breach" if ok else "FAILED")
+        round_log_lines.append(
+            f"  [{tool}] {status}: {compress_tool_output(output, max_lines=8) if output else '(no output)'}"
+        )
+        if not corrected_once:
+            correction = _maybe_correct_exploit_selection(goal, chain, i, step, output)
+            if correction is not None:
+                chain = chain[:i + 1] + correction
+                corrected_once = True
+        i += 1
+        if success:
+            break
+    return success, round_log_lines, step_outputs
+
+
+# --- Deterministic recon-lead escalation ------------------------------------
+# kali-network-model-6w8 confirmed the model will not convert a discovered
+# directory/redirect into an actual fetch even when the follow-up prompt
+# explicitly tells it to (round 2 of that test was handed the exact
+# "/config/ found, fetch it" lead in plain text and still ran ffuf/nuclei
+# instead). Rather than keep tuning the prompt, this follows up on a small
+# set of well-known, high-value recon signals itself -- no model call
+# involved -- the same "verify with the real tool, don't rely on the model
+# noticing" precedent _maybe_correct_exploit_selection already set for a
+# different case. Grounded in a real check against 172.17.0.12: gobuster/
+# nikto finding "/config/" with directory indexing on led straight to a
+# world-readable config.inc.php.bak leaking real DB credentials -- exactly
+# the kind of lead a human tester chases without needing to be told to.
+_DIR_LISTING_SIGNATURE = re.compile(r"<title>Index of ", re.IGNORECASE)
+_HREF_RE = re.compile(r'href="([^"?][^"]*)"', re.IGNORECASE)
+_GOBUSTER_DIR_RE = re.compile(r"^(\S+)\s+\(Status:\s*301\)", re.MULTILINE)
+_NIKTO_INDEXING_RE = re.compile(r"\+\s*\[\d+\]\s*(/\S+?):\s*Directory indexing found", re.IGNORECASE)
+_SECRET_PATTERNS = re.compile(
+    r"(db_password|password|passwd|secret_key|api_key|access_key|"
+    r"private_key|BEGIN (?:RSA |EC |DSA )?PRIVATE KEY|aws_secret|"
+    r"authorization:\s*bearer)",
+    re.IGNORECASE,
+)
+MAX_AUTO_CURL_DIRS = 3
+MAX_AUTO_CURL_FILES_PER_DIR = 5
+
+
+def _extract_directory_leads(base_url, tool, output):
+    """Deterministic extraction of real, indexable-looking directory paths
+    from recon tool output -- gobuster's 301-redirect-to-subdirectory
+    entries, nikto's explicit "Directory indexing found" flags. Returns
+    absolute URLs."""
+    leads = set()
+    if not output:
+        return leads
+    base = base_url.rstrip("/")
+    if tool == "run_gobuster":
+        for name in _GOBUSTER_DIR_RE.findall(output):
+            leads.add(f"{base}/{name.strip('/')}/")
+    if tool == "run_nikto":
+        for path in _NIKTO_INDEXING_RE.findall(output):
+            leads.add(f"{base}{path}")
+    return leads
+
+
+def _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs):
+    """After a round's model-planned chain runs, deterministically fetch
+    any indexed directories it (or nikto) found, and any files listed
+    inside them, checking each for an obvious leaked secret. Returns
+    (success, escalation_log_lines) in the same shape _run_chain_against_port
+    returns, so it can be folded into the same round history.
+    """
+    leads = set()
+    for tool, output in step_outputs:
+        leads |= _extract_directory_leads(base_url, tool, output)
+    if not leads:
+        return False, []
+
+    success = False
+    log_lines = []
+    for dir_url in sorted(leads)[:MAX_AUTO_CURL_DIRS]:
+        dir_step = {"tool": "run_curl", "url": dir_url, "method": "GET"}
+        if cache and not cache.should_attempt(dir_step):
+            continue
+        log.info(f"[ESCALATE] 🔗 Auto-fetching discovered directory: {dir_url}")
+        output, ok = execute_step(dir_step)
+        if not ok or not output or not _DIR_LISTING_SIGNATURE.search(output):
+            log_lines.append(f"  [auto-curl] {dir_url}: not an indexable directory listing")
+            continue
+        files = [f for f in _HREF_RE.findall(output) if not f.startswith("?") and f != "/" and not f.endswith("/")]
+        log_lines.append(f"  [auto-curl] {dir_url}: directory listing exposed, files: {files[:10]}")
+        memory.add_finding(port, "run_curl (auto directory-listing)", f"{dir_url} exposes: {files}")
+        for fname in files[:MAX_AUTO_CURL_FILES_PER_DIR]:
+            file_url = dir_url.rstrip("/") + "/" + fname
+            file_step = {"tool": "run_curl", "url": file_url, "method": "GET"}
+            if cache and not cache.should_attempt(file_step):
+                continue
+            log.info(f"[ESCALATE] 🔗 Auto-fetching listed file: {file_url}")
+            file_output, file_ok = execute_step(file_step)
+            if file_ok and file_output and _SECRET_PATTERNS.search(file_output):
+                success = True
+                if cache:
+                    cache.record_success(file_step)
+                memory.add_finding(
+                    port, "run_curl (auto secret-leak)",
+                    f"{file_url}:\n{compress_tool_output(file_output, max_lines=20)}",
+                )
+                log.info(f"[SUCCESS] 🎉😄 Auto-escalation found a real secret at {file_url}")
+                log_lines.append(
+                    f"  [auto-curl] {file_url}: LEAKED CREDENTIALS/SECRET -- "
+                    f"{compress_tool_output(file_output, max_lines=5)}"
+                )
+            elif file_ok and file_output:
+                log_lines.append(f"  [auto-curl] {file_url}: fetched, no secret pattern matched")
+    return success, log_lines
+
+
 def run_attack_loop(target, memory, cache=None):
     log.info(f"[ATTACK] Starting attack loop on {target}")
     while memory.has_untried_ports():
         port = memory.next_untried_port()
         log.info(f"[ATTACK] ⚔️  Targeting port {port}")
-        goal = (
+        base_goal = (
             f"Target: {target} Port: {port}. "
             f"Failed ports: {memory.recent_failed_attacks()}. "
             f"Exploit this port with any available tool. Try multiple tools if needed."
         )
-        data = call_model(goal)
-        chain = data.get("chain", [])
-        if not chain:
-            log.warning(f"[FAIL] 😤💀 No attack chain generated for port {port}")
-            memory.mark_tried(port, success=False)
-            continue
+        base_url = f"http://{target}" if str(port) == "80" else f"http://{target}:{port}"
         success = False
-        corrected_once = False
-        i = 0
-        while i < len(chain):
-            step = chain[i]
-            if cache and not cache.should_attempt(step):
-                log.warning(f"[MEMORY] 🚫 Skipping permanently blocked step: {step.get('tool')}")
-                i += 1
-                continue
-            output, ok = execute_step(step)
-            if ok and output and _detect_exploit_success(step.get("tool"), output):
-                success = True
-                if cache:
-                    cache.record_success(step)
-                memory.add_finding(port, step.get("tool"), output)
-            elif not ok:
-                if cache:
-                    reason = f"tool={step.get('tool')} port={port} output_empty={not bool(output)}"
-                    cache.record_failure(step, reason=reason)
-            if not corrected_once:
-                correction = _maybe_correct_exploit_selection(goal, chain, i, step, output)
-                if correction is not None:
-                    chain = chain[:i + 1] + correction
-                    corrected_once = True
-            i += 1
+        seen_chain_signatures = set()
+        history = []
+        round_num = 1
+        while round_num <= MAX_ATTACK_ROUNDS and not success:
+            if round_num == 1:
+                goal = base_goal
+            else:
+                # Only the most recent 2 rounds -- each already capped by
+                # compress_tool_output -- to keep this bounded for a small-
+                # context model instead of growing every round.
+                recent_history = "\n".join(history[-2:])
+                goal = (
+                    f"{base_goal}\n\n"
+                    f"You have already tried {round_num - 1} round(s) on this port with no "
+                    f"breach yet:\n{recent_history}\n\n"
+                    f"Build on these REAL results -- e.g. if a directory or file was "
+                    f"discovered, fetch or inspect it (run_curl/run_command); if a login "
+                    f"form or endpoint was found, attack it directly. Do NOT repeat a "
+                    f"tool+target you already ran that produced no new lead. If you "
+                    f"genuinely have nothing further to try, respond with an empty chain: "
+                    f'{{"chain": []}}.'
+                )
+            log.info(f"[ATTACK] Port {port} round {round_num}/{MAX_ATTACK_ROUNDS}")
+            data = call_model(goal)
+            chain = data.get("chain", [])
+            if not chain:
+                log.info(f"[ATTACK] Port {port} round {round_num}: model returned an empty chain (gave up)")
+                break
+
+            signature = tuple(sorted((s.get("tool"), s.get("target") or s.get("url") or "") for s in chain))
+            if signature in seen_chain_signatures:
+                log.warning(
+                    f"[ATTACK] Port {port} round {round_num}: model repeated an identical "
+                    f"chain with no new information -- stopping (breakdown point)"
+                )
+                break
+            seen_chain_signatures.add(signature)
+
+            success, round_log_lines, step_outputs = _run_chain_against_port(chain, port, memory, cache, goal)
+
+            if not success and step_outputs:
+                esc_success, esc_log_lines = _deterministic_recon_escalation(
+                    base_url, port, memory, cache, step_outputs
+                )
+                if esc_log_lines:
+                    round_log_lines += esc_log_lines
+                if esc_success:
+                    success = True
+                    log.info(f"[ATTACK] Port {port}: deterministic escalation found a real breach -- skipping further rounds")
+
+            history.append(f"Round {round_num}:\n" + "\n".join(round_log_lines))
+            round_num += 1
+
+        if round_num > MAX_ATTACK_ROUNDS and not success:
+            log.warning(f"[ATTACK] Port {port}: hit MAX_ATTACK_ROUNDS ({MAX_ATTACK_ROUNDS}) without a breach")
         memory.mark_tried(port, success=success)
     log.info("[ATTACK] Attack loop complete")
     summary = memory.summary()
