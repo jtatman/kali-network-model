@@ -23,7 +23,7 @@ If you find a security issue in the *agent's own code* (as opposed to a finding 
 ## Architecture
 
 ```
-agent.py  (REPL: engage <target> / freeform goal / exit)
+agent.py  (REPL: engage <target> / recon <target> / freeform goal / exit)
      │
      ├──► Ollama  (separate networked host, native /api/chat,
      │     JSON-schema-constrained tool-chain output)
@@ -59,7 +59,7 @@ Three logical roles, three machines by default (can be collapsed — see **Setup
 
 -----
 
-## Tool Arsenal (24 tools)
+## Tool Arsenal (25 tools)
 
 Source of truth: `SUPPORTED_TOOLS` in `tools.py`.
 
@@ -67,6 +67,7 @@ Source of truth: `SUPPORTED_TOOLS` in `tools.py`.
 |--------------------|--------------------------------------------|
 | `run_masscan`      | Fast port discovery                        |
 | `run_nmap`         | Deep service/version scanning              |
+| `run_naabu`        | Fast port discovery, piped into `run_nuclei`/`run_command` |
 | `run_netstat`      | Local socket state (falls back to `ss`)    |
 | `run_nikto`        | Web vulnerability scanning                 |
 | `run_gobuster`     | Web directory/file brute forcing           |

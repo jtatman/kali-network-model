@@ -11,6 +11,7 @@ agent.log
 .cache/
 *backup*.py
 resume.sh
+exports/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
