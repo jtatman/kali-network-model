@@ -117,7 +117,13 @@ def classify_danger_level(row):
         return 3, "exploit_payload_marker"
     if _EXPLOIT_TOOL_NAME_RE.search(blob):
         return 3, "exploit_tool_name_in_raw_command"
-    if row.get("scope") == "exploit_authorized" and any(
+    # exploit_conditional is treated the same as exploit_authorized here --
+    # once it actually fires (a pipeline_chain_builder recipe's
+    # condition_check matched real stage-1 output), the resulting chain is
+    # just as much stage-2 as a blanket exploit_authorized one; the two
+    # differ in HOW they were authorized, not in how dangerous the
+    # resulting chain is.
+    if row.get("scope") in ("exploit_authorized", "exploit_conditional") and any(
         step.get("tool") in ("run_curl", "run_sqlmap") and step.get("cookie")
         for step in chain if isinstance(step, dict)
     ):
@@ -128,7 +134,7 @@ def classify_danger_level(row):
         return 0, "passive_recon_tool"
     # run_curl/run_wget/run_command/write_file/read_file/run_metasploit(search)
     # with none of the above markers -- default to the scope-implied floor.
-    if row.get("scope") == "exploit_authorized":
+    if row.get("scope") in ("exploit_authorized", "exploit_conditional"):
         return 2, "exploit_authorized_scope_default"
     return 1, "unclassified_default"
 

@@ -29,6 +29,100 @@ in**: the seed `naabu_nuclei_pipe_live` recipe's live run against
 was run twice, once with the override off and once on, both times taking
 the identical recon-only path since this recipe has no `stage_2`).
 
+### The three-way scope: `recon_only` / `exploit_authorized` / `exploit_conditional`
+
+`exploit_conditional` sits between the other two, and it works
+**differently** from both rather than just being a third label:
+
+- `recon_only` has a hard, deterministic runtime backstop (`agent.py`'s
+  `_is_recon_safe_step`/`RECON_ONLY_BLOCKED_TOOLS`) — it blocks specific
+  tool names outright, which a simple set-membership check can enforce
+  perfectly.
+- `exploit_authorized` is a blanket green light, gated only by
+  `CONFIG.ALLOW_FULL_PIPELINE_CHAINS` — the flag is the whole check.
+- `exploit_conditional` means "stage 2 is authorized **only if** a
+  specific, named condition is true of what stage 1 actually found" —
+  e.g. a real engagement scoped to "you may demonstrate the SQL injection
+  you find, but don't attempt credential brute force against anything
+  else." This is arguably the *more realistic* case — real Rules of
+  Engagement are almost always conditionally scoped, not a blanket yes/no.
+
+Whether that's enforceable, not just labelable, is the real question, and
+the honest answer is: **only partially**, and only because the mechanism
+here is deliberately narrow. `pipeline_chain_builder.py` recipes can set a
+`condition_check` regex; stage 2 then requires BOTH
+`ALLOW_FULL_PIPELINE_CHAINS=true` AND a real match of that regex against
+stage 1's actual captured output — not just "the flag happens to be set."
+This works because the condition is a simple pattern match against real
+text. It does **not** generalize to arbitrary natural-language conditions
+("only if the CVE looks recent," "only against externally-facing
+services") — that's a judgment call a regex can't make, which is exactly
+why `recon_only` gets a hard tool-level gate and this doesn't. Its real
+value is as a **training-data construct**: matched-pair examples (same
+recon finding, `exploit_authorized` in one row escalates unconditionally,
+`exploit_conditional` in another row escalates only when the stated
+condition is actually met, refuses/reports otherwise) teach the model that
+authorization comes from what was *stated*, not from what's merely
+*possible* — a stronger signal than isolated examples of either behavior
+alone.
+
+### Tools vs. dataset: efficiency and breadth are different goals, kept separate
+
+Explicit design principle, not an oversight: **production code
+(`SYSTEM_PROMPT`, the "preferred pathway" framing, any future tool-
+selection guidance) should always steer toward the single most efficient
+path for a given situation** — e.g. `nmap --script vuln,http-enum` over a
+bare `-sV`, because it's simply the better default. **The training
+dataset's job is the opposite: maximum breadth of correct-but-not-
+necessarily-optimal variations** (see `converted_nmap_capped.jsonl`'s
+enormous flag diversity) so the model has seen enough syntax variety to
+be robust, not just efficient. A dataset row using a legitimate but
+sub-optimal flag combination is not a bug to clean up — don't filter the
+corpus down to "only the best way to do X," or the breadth this corpus
+exists to provide disappears.
+
+### Real massaging gotchas found this pass (live-tested, one stage at a time)
+
+Building the `masscan_nmap_searchsploit_chain` recipe (masscan sweep →
+awk-extracted `host:port` list → per-host `nmap -sV` service ID → a second
+awk/sed normalization pass → `searchsploit`) against the real
+InfoSecWarrior stack (172.25.0.2–.7 via `kali-agent-box`) surfaced several
+concrete "massaging" requirements — worth generalizing to any future
+chain that strings together tools not normally used back-to-back:
+
+- **`masscan -oG`'s format is NOT the same shape as `nmap -oG`**: one
+  `Timestamp:\tHost: <ip> ()\tPorts: <port>/open/...` line **per open
+  port**, not all of a host's ports comma-joined on one line the way
+  `nmap -oG` does it. A massaging step written against nmap's format will
+  silently mis-parse masscan's.
+- **`docker exec`'s default working directory is `/`, not `/tmp` or
+  `$HOME`** — a relative filename in a `tee`/`&&` chain lands wherever
+  that default is, not where you'd expect from an interactive SSH session.
+  Always use absolute paths (`/tmp/...`) in any chained `run_command`
+  string that writes an intermediate file for a later stage to read.
+- **`masscan`'s live status line can visibly count into *negative*
+  seconds** ("waiting -19-secs") in this containerized network — looks
+  exactly like a hang. It isn't: the process completes and writes a
+  correct, complete output file regardless; the countdown display is
+  cosmetic noise from a non-TTY `docker exec` context. `--wait 0` avoids
+  the confusing display (this is itself worth a documented negative
+  example — a naive "did the command hang" check on this output text
+  would be wrong).
+- **A raw `nmap -sV` version string needs normalization before
+  `searchsploit` returns anything**: `"Apache httpd 2.4.7 ((Ubuntu))"`
+  returns zero results; `"Apache 2.4.7"` (strip the parenthetical OS tag
+  and the generic `httpd`/`smtpd`/`pop3d`/`imapd` daemon-name suffix)
+  returns real matches. Confirmed live across the whole stack: `vsftpd
+  3.0.3`, `Apache 2.4.6/2.4.7/2.4.57` all returned real exploit-db hits
+  after normalization; `OpenSSH 9.2p1`, `MariaDB 5.5.5-10.5.23`, `Jetty
+  10.0.20` are genuine, current, patched versions with real 0-result
+  negatives (not a normalization failure — worth keeping as honest
+  negative examples). A bare service name with no version at all
+  (`Postfix`, `Dovecot` — nmap's probe didn't return a version) still
+  returns *some* searchsploit hits, but old/generic/low-relevance ones —
+  worth flagging in training data as "a version-less query is a weaker
+  signal, not a wasted one."
+
 ## Gold-standard plan: two exported formats
 
 This corpus is built once, from the same underlying reviewed rows, into
@@ -86,11 +180,12 @@ target, output captured), `unverified_outcome` (source-flagged
 embeds a real-looking cookie/nonce/token — scrub before any external
 sharing), `tradecraft_sensitive` (level-4 content).
 
-Current tag distribution over `combined_chatml_format.jsonl` (1179
-conversations, after wiring in `pipeline_chains_generated.jsonl`): 128
-`passive_recon`, 805 `active_enumeration`, 2 `authenticated_access`, 192
-`active_exploitation`, 52 `destructive_or_evasive`. `live_verified` is now
-16 (was 8) — `logs_failure_recovery` and `pipeline_chain_builder` weren't
+Current tag distribution over `combined_chatml_format.jsonl` (1182
+conversations, after wiring in `pipeline_chains_generated.jsonl` and the
+`cve_conditional_exploit` matched pair): 128 `passive_recon`, 806
+`active_enumeration`, 2 `authenticated_access`, 194 `active_exploitation`,
+52 `destructive_or_evasive`. `live_verified` is now 17 (was 8) —
+`logs_failure_recovery` and `pipeline_chain_builder` weren't
 being matched (the code checked source `"logs"`, which never actually
 occurs; the real value is `"logs_failure_recovery"` — fixed in the same
 pass). (An earlier pass under-counted
@@ -127,8 +222,12 @@ Grouping those by pathway would have silently fabricated conversations
 that never happened — `combined_chatml_format.jsonl`'s
 `metadata.threading_confidence` field (`verified_sequential` vs.
 `independent_sample`) makes this explicit per row rather than leaving it
-implicit. Today: 9 verified-sequential multi-turn conversations (23 turns)
-vs. 1169 independent single-turn samples.
+implicit. `VERIFIED_SEQUENTIAL_PATHWAYS` (a per-pathway allowlist, not a
+blanket source rule) is the escape hatch for a pathway that IS genuinely
+sequential despite living in a mostly-independent-samples source file —
+`cve_conditional_exploit` (below) is the first case. Today: 11
+verified-sequential multi-turn conversations (27 turns) vs. 1171
+independent single-turn samples.
 
 ## Pipeline
 
@@ -164,9 +263,10 @@ raw_nmap_commands.jsonl  --scripts/convert_nmap.py-->  nmap_cleaned_full.jsonl  
 
 Every generated file uses the same target schema: `{"goal": <exact prompt
 text>, "chain": [{"tool": ..., <params>}], "scope": "recon_only" |
-"exploit_authorized" | null, "pathway": <name> | null, "turn": <int>,
-"source": <which script/file this came from>}`. `goal` is built from the
-EXACT string templates `agent.py`'s `run_attack_loop`/`run_recon_only_loop`
+"exploit_authorized" | "exploit_conditional" | null, "pathway": <name> |
+null, "turn": <int>, "source": <which script/file this came from>}`.
+`goal` is built from the EXACT string templates
+`agent.py`'s `run_attack_loop`/`run_recon_only_loop`
 construct at runtime (see `scripts/build_pathways.py`'s helper functions) —
 deliberate, so the fine-tune sees the identical prompt shape it will
 actually be run against.
@@ -216,7 +316,7 @@ actually be run against.
   volume; capped to roughly the same order of magnitude as the other
   pathway sources. **This is the file the merge actually uses** —
   `nmap_cleaned_full.jsonl` is kept separately in case more is wanted later.
-- `generated_pathways.jsonl` (62 examples, `scripts/build_pathways.py`) —
+- `generated_pathways.jsonl` (66 examples, `scripts/build_pathways.py`) —
   hand-authored, parametrized variations around the 10 canonical
   recon/exploit pathways from this session's design discussion, using
   **structured per-tool params** (unlike `converted_baseline.jsonl`).
@@ -225,7 +325,12 @@ actually be run against.
   **matched recon_only/exploit_authorized pairs** and honest dead-end/
   give-up examples (empty-chain responses, not busywork). `turn` is a
   *simulated round-shape* label per example, not a conversation index —
-  see "Multi-turn threading" above.
+  see "Multi-turn threading" above. **Exception**: the `cve_conditional_exploit`
+  pathway (4 rows, added this pass) IS genuinely sequential — two real
+  matched pairs (`172.17.0.12`: condition met, escalates via a real
+  matched CVE/module; `172.25.0.4`: condition not met, a current patched
+  version with no exploit match, correctly stops with an empty chain) —
+  listed in `export_chatml_format.py`'s `VERIFIED_SEQUENTIAL_PATHWAYS`.
 - `playbook_dvwa.jsonl` (6 examples, `scripts/build_playbook.py`) — the
   highest-confidence source in the corpus: `playbooks/dvwa_full_chain.sh`'s
   manually-verified techniques, re-encoded as one continuous multi-turn
@@ -258,25 +363,30 @@ actually be run against.
   `login.php?id=1` few-shot contamination, the malformed `http-post-form`
   attempt). `real_outcomes` is preserved per row so a reviewer can filter/
   correct before merging.
-- `pipeline_chains_generated.jsonl` (1 unique row so far, 2 raw —
-  `scripts/pipeline_chain_builder.py`) — real output of the seed
-  `naabu_nuclei_pipe_live` recipe run against `kali-agent-box`/172.17.0.12,
-  once with `ALLOW_FULL_PIPELINE_CHAINS=false` and once `=true`; both took
-  the same recon-only path since this recipe has no `stage_2` step, so
-  they deduped to 1 row on merge. Now wired into
-  `merge_scripts_format.py`'s `SOURCES`. **Still only covers `run_naabu`/
-  `run_nuclei`, and even then as a `run_command` shell pipe, not a
-  structured tool call** — the tool-imbalance gap below is unchanged by
-  this row; more, genuinely different recipes are still needed.
-- `combined_scripts_format.jsonl` (1193 examples, `scripts/merge_scripts_format.py`)
+- `pipeline_chains_generated.jsonl` (2 unique rows, 4 raw —
+  `scripts/pipeline_chain_builder.py`) — real output of two recipes run
+  against `kali-agent-box`: `naabu_nuclei_pipe_live` (172.17.0.12, run
+  twice with the override off/on, deduped to 1 row — both took the
+  recon-only path since this recipe has no `stage_2`), and
+  `masscan_nmap_searchsploit_chain` (172.25.0.2-.7, a full masscan sweep →
+  awk-massaged host:port list → per-host `nmap -sV` service ID → a second
+  normalization pass → `searchsploit`, all as one `run_command` string —
+  see "Real massaging gotchas found this pass" above). Both entirely
+  stage-1/identification, so neither needed the override to actually run.
+  Now wired into `merge_scripts_format.py`'s `SOURCES`. **Still no
+  structured `run_naabu`/`run_masscan`/`run_searchsploit` calls** — every
+  row so far is a `run_command` shell pipe, not a structured tool call —
+  the tool-imbalance gap below is unchanged; more, genuinely different
+  recipes are still needed.
+- `combined_scripts_format.jsonl` (1198 examples, `scripts/merge_scripts_format.py`)
   — the deduped, tool-name-validated merge of every *reviewed* source above
   (excludes `logs_extracted_UNREVIEWED.jsonl` entirely, the 2 unreviewed
-  WordPress rows, and any `stage_2_blocked_pending_override` row). 1
-  cross-file exact duplicate dropped on this pass (the repeated
-  `pipeline_chains_generated.jsonl` run above) — every other source stayed
-  at 0, they're disjoint by construction (within-file dedup already
+  WordPress rows, and any `stage_2_blocked_pending_override` row). 2
+  cross-file exact duplicates dropped on this pass (the repeated
+  `pipeline_chains_generated.jsonl` runs above) — every other source
+  stayed at 0, they're disjoint by construction (within-file dedup already
   happened in each source's own build script).
-- `combined_chatml_format.jsonl` (1179 conversations, `scripts/export_chatml_format.py`)
+- `combined_chatml_format.jsonl` (1182 conversations, `scripts/export_chatml_format.py`)
   — the ChatML/general-purpose export of the same merged rows, with
   danger-level/safeguard tags and verified-vs-independent turn threading.
 
@@ -303,6 +413,20 @@ actually be run against.
   `tools.SUPPORTED_TOOLS` directly makes tool-name drift structurally
   impossible; this confirms the *param-level* documentation hasn't drifted
   either.
+- **Multi-turn ratio is far below target.** The original design target
+  (confirmed correct, per user review) is ~60–70% multi-turn / 30–40%
+  single-turn in the core-pathway portion — deliberately oversampling the
+  escalation weak point rather than mirroring natural frequency (which
+  would be single-turn-heavy, since most ports never need round 2 once
+  the breach-conflation bug is fixed). Current actual: 11 verified-
+  sequential multi-turn conversations out of 1182 (still under 1%, up from
+  9/1179 this pass via one new live pipeline-chain row and one hand-
+  authored matched pair). Closing this gap is the single highest-priority
+  remaining item — `pipeline_chain_builder.py` recipes reaching a real
+  stage 2, and more hand-authored matched pairs like
+  `cve_conditional_exploit`, are the intended mechanisms, but building
+  enough of them to move this ratio meaningfully is still almost entirely
+  undone.
 - **Multi-turn value against a live Kali target is not independently
   validated yet.** The corpus *contains* real multi-turn examples
   (`playbook_dvwa.jsonl`, `exports_transcript2_extracted.jsonl`), but

@@ -54,6 +54,7 @@ Run: python3 training-data/scripts/pipeline_chain_builder.py
 """
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -87,6 +88,48 @@ PIPELINE_RECIPES = [
         ],
         "stage_2": [],
     },
+    {
+        # masscan and searchsploit are never used back-to-back in the
+        # original 10 pathways -- this chains them anyway (per explicit
+        # request) via a multi-host masscan sweep -> awk-massaged
+        # host:port list -> per-host nmap -sV service ID -> a second
+        # awk/sed normalization pass -> searchsploit, all as ONE
+        # run_command pipe/&& string. Every stage tested live one at a
+        # time against the real InfoSecWarrior stack (172.25.0.2-.7)
+        # before being chained -- see training-data/README.md's "Real
+        # massaging gotchas found this pass" for what each transform is
+        # actually working around and why it's needed (masscan's -oG
+        # format puts one port per line, not comma-joined like nmap's;
+        # nmap's raw version string needs the OS-in-parens and daemon-
+        # name suffix stripped before searchsploit returns anything).
+        # Entirely stage-1/identification (masscan, nmap -sV, and
+        # searchsploit's plain lookup mode are all recon-tier) -- no
+        # stage_2 here, this recipe never needs the override.
+        "pathway": "masscan_nmap_searchsploit_chain",
+        "target": "172.25.0.2-172.25.0.7",
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "masscan -p21,22,25,53,80,110,143,3306,8080 172.25.0.2-172.25.0.7 "
+                    "--rate 1000 --wait 0 -oG /tmp/masscan_out.txt >/dev/null 2>&1 && "
+                    "grep '^Timestamp' /tmp/masscan_out.txt | "
+                    "awk -F'\\t' '{host=$2; sub(/^Host: /,\"\",host); sub(/ \\(\\)$/,\"\",host); "
+                    "port=$3; sub(/^Ports: /,\"\",port); split(port,pp,\"/\"); print host\":\"pp[1]}' "
+                    "| tee /tmp/massaged_targets.txt >/dev/null && "
+                    "while IFS=: read -r host port; do "
+                    "nmap -sV -p\"$port\" --open -oG - \"$host\" 2>/dev/null | grep 'Ports:'; "
+                    "done < /tmp/massaged_targets.txt | "
+                    "awk -F'\\t' '{n=split($2,f,\"/\"); if (f[7] != \"\") print f[7]}' | "
+                    "sed -E 's/ \\(.*\\)//; s/ (httpd|smtpd|pop3d|imapd)( |$)/ /' | "
+                    "sort -u | tee /tmp/versions_normalized.txt >/dev/null && "
+                    "while read -r v; do echo \"--- $v ---\"; searchsploit \"$v\" 2>&1; done "
+                    "< /tmp/versions_normalized.txt"
+                ),
+            },
+        ],
+        "stage_2": [],
+    },
 ]
 
 
@@ -95,10 +138,22 @@ def _goal_for_stage1(recipe):
 
 
 def _goal_for_stage2(recipe, stage1_summary):
+    condition_check = recipe.get("condition_check")
+    if condition_check:
+        authorization_note = (
+            f"SCOPE: exploit_conditional -- authorized ONLY because stage 1's real output "
+            f"matched the required condition ({condition_check!r}); this is not a blanket "
+            "go-ahead, the same recipe with a different stage-1 result would have stayed "
+            "recon_only."
+        )
+    else:
+        authorization_note = (
+            "SCOPE: exploit_authorized (ALLOW_FULL_PIPELINE_CHAINS) -- proceed to stage 2 "
+            "(craft/deploy the exploit the stage-1 identification pointed at)."
+        )
     return (
         f"Target: {recipe['target']}. Stage-1 identification complete:\n{stage1_summary}\n\n"
-        "ALLOW_FULL_PIPELINE_CHAINS is set -- proceed to stage 2 (craft/deploy the exploit "
-        "the stage-1 identification pointed at)."
+        f"{authorization_note}"
     )
 
 
@@ -141,6 +196,29 @@ def run_recipe(recipe, executor):
         )
         return rows, stage1_results
 
+    # exploit_conditional (vs. plain exploit_authorized): a recipe can set
+    # `condition_check` to a regex that must match stage 1's REAL captured
+    # output -- e.g. "a specific CVE ID appeared" or "a credential string
+    # was found" -- not just "the override flag happens to be set". This
+    # is the one piece of exploit_conditional that CAN be enforced
+    # deterministically (unlike recon_only's full tool-level gate): it
+    # only works because the condition here is a simple pattern match
+    # against real text, not an open-ended judgment call. A recipe author
+    # writing a `condition_check` that doesn't actually correspond to
+    # something meaningful in stage 1's output defeats the point -- this
+    # is a narrow mechanism, not a general policy engine.
+    condition_check = recipe.get("condition_check")
+    scope = "exploit_conditional" if condition_check else "exploit_authorized"
+    if condition_check and not re.search(condition_check, stage1_summary):
+        row1["stage_2_blocked_pending_override"] = True
+        row1["stage_2_blocked_reason"] = "condition_check did not match stage-1 output"
+        print(
+            f"[{recipe['pathway']}] stage 1 complete, stage 2 BLOCKED -- "
+            f"condition_check {condition_check!r} did not match real stage-1 output "
+            "(override was set, but the specific condition this recipe requires wasn't met)."
+        )
+        return rows, stage1_results
+
     stage2_results = []
     for step in recipe["stage_2"]:
         params = {k: v for k, v in step.items() if k != "tool"}
@@ -149,7 +227,7 @@ def run_recipe(recipe, executor):
     row2 = {
         "goal": _goal_for_stage2(recipe, stage1_summary),
         "chain": recipe["stage_2"],
-        "scope": "exploit_authorized",
+        "scope": scope,
         "pathway": recipe["pathway"],
         "turn": 2,
         "source": "pipeline_chain_builder",

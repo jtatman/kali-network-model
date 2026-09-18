@@ -18,14 +18,23 @@ sequential in the source data:
   - source == "exports" (mined directly from a real session transcript,
     turns sequential within a pathway, one pathway = one real exchange)
     -- grouped by pathway.
-Everything else (pathway_generator, baseline_cleaned, nmap_commands,
-logs_failure_recovery) is exported as an INDEPENDENT single-turn example
+Everything else in pathway_generator/baseline_cleaned/nmap_commands/
+logs_failure_recovery is exported as an INDEPENDENT single-turn example
 even where its own `turn` field is >1 -- confirmed by inspection that e.g.
 generated_pathways.jsonl's "authenticated_sqli" pathway has six rows all
 at turn=2 with no turn=1 companions, i.e. `turn` there means "this example
 simulates the shape of round N's prompt", not "these rows chain together".
 Grouping those by pathway would silently fabricate conversations that
-never happened. See training-data/README.md's "Gold-standard plan" section.
+never happened.
+
+EXCEPTION: individual pathway names in VERIFIED_SEQUENTIAL_PATHWAYS below
+are genuinely sequential even though their `source` (pathway_generator)
+is not -- this is a per-pathway allowlist, not a blanket source rule,
+because within one hand-authored source file some pathways are real
+matched-pair conversations and most aren't. Only add a pathway here after
+confirming by inspection (like the check above) that ALL its rows for a
+given turn actually continue from the previous turn, not just share a
+label. See training-data/README.md's "Gold-standard plan" section.
 """
 import json
 import os
@@ -40,6 +49,11 @@ IN_PATH = os.path.join(DATA_DIR, "combined_scripts_format.jsonl")
 OUT_PATH = os.path.join(DATA_DIR, "combined_chatml_format.jsonl")
 
 SEQUENTIAL_SOURCES = {"playbook", "exports"}
+VERIFIED_SEQUENTIAL_PATHWAYS = {"cve_conditional_exploit"}
+
+
+def _is_sequential(row):
+    return row.get("source") in SEQUENTIAL_SOURCES or row.get("pathway") in VERIFIED_SEQUENTIAL_PATHWAYS
 
 
 def to_chain_content(chain):
@@ -82,12 +96,30 @@ def main():
 
     conversations = []
 
-    sequential = [r for r in rows if r.get("source") in SEQUENTIAL_SOURCES]
-    standalone = [r for r in rows if r.get("source") not in SEQUENTIAL_SOURCES]
+    sequential = [r for r in rows if _is_sequential(r)]
+    standalone = [r for r in rows if not _is_sequential(r)]
 
+    # SEQUENTIAL_SOURCES (playbook/exports) group cleanly on (source,
+    # pathway) alone -- each pathway there is already exactly one real
+    # conversation, confirmed by inspection. VERIFIED_SEQUENTIAL_PATHWAYS
+    # is different: a pathway_generator pathway name can legitimately be
+    # reused across several independent target/turn-1 starts (e.g.
+    # cve_conditional_exploit's two separate matched-pair scenarios), so
+    # those need the goal's stated target folded into the key too, or two
+    # unrelated 2-turn pairs would wrongly merge into one fabricated
+    # 4-turn conversation. Only pathway_generator's rows reliably start
+    # every turn with "Target: X Port: Y ..." -- exports' turn>=2 goals
+    # are free-flowing narrative continuations with no such prefix, so
+    # applying this same extraction there would (and, when tried, did)
+    # break their otherwise-correct single-pathway grouping instead.
     by_pathway = {}
     for r in sequential:
-        by_pathway.setdefault((r.get("source"), r.get("pathway")), []).append(r)
+        if r.get("pathway") in VERIFIED_SEQUENTIAL_PATHWAYS:
+            target = (r.get("goal") or "").split("Port:")[0].split("Target:")[-1].strip()
+            key = (r.get("source"), r.get("pathway"), target)
+        else:
+            key = (r.get("source"), r.get("pathway"))
+        by_pathway.setdefault(key, []).append(r)
     for key, group in by_pathway.items():
         group.sort(key=lambda r: r.get("turn") or 0)
         conversations.append(build_conversation(group, "verified_sequential"))
