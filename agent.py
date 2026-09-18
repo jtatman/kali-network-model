@@ -27,11 +27,29 @@ with no target/url/filename etc. will simply fail):
 - run_masscan: target, ports (default "1-65535"), rate (default "1000")
 - run_nmap: target, flags (default "-sV")
 - run_netstat: flags (default "-tuln")
-- run_sqlmap: target, technique (default "B"), dbms, level (default "1"), risk (default "1")
+- run_sqlmap: target, technique (default "B"), dbms, level (default "1"), risk (default "1"),
+  cookie (the exact Cookie header value, e.g. "PHPSESSID=abc123; security=low" -- REQUIRED for
+  any endpoint behind a login; get the session id from a prior run_curl's response headers)
 - run_nikto: target, port (default "80"), ssl (bool)
-- run_hydra: target, service, username (required, never ""; guess "root"/"admin"/"administrator" if unknown), wordlist, threads (default "16")
+- run_hydra: target, service, username (required, never ""; guess "root"/"admin"/"administrator" if unknown), wordlist, threads (default "16").
+  For service "http-post-form" or "http-get-form" (brute-forcing a WEB LOGIN
+  FORM -- never use "mysql"/"ssh" service names for a web login page, they
+  are unrelated network protocols), you ALSO need:
+  path (the form's URL path+query, e.g. "/login.php" -- omit to reuse a path
+  already in target), body (the exact form field string with ^USER^/^PASS^
+  placeholders exactly as the real form's field names, e.g.
+  "username=^USER^&password=^PASS^&Login=Login" -- copy real field names
+  from the form's actual HTML, do not guess generic ones), cookie (optional,
+  a session cookie required to even reach the form, same format as
+  run_sqlmap's cookie above), and success_string (a substring ONLY present
+  on a successful login response, preferred) or failure_string (a substring
+  ONLY present on a failed attempt) -- one of these two is required so hydra
+  can tell a hit from a miss.
 - run_searchsploit: keyword, type
-- run_curl: url, method (default "GET"), headers, data
+- run_curl: url, method (default "GET"), headers, data, cookie (the exact
+  Cookie header value, e.g. "PHPSESSID=abc123; security=low" -- REQUIRED for
+  any endpoint behind a login; extract the session id from a PRIOR run_curl
+  call's own response, which already includes headers)
 - run_wget: url, output, recursive (bool)
 - write_file: filename, content
 - read_file: filename
@@ -62,7 +80,14 @@ HYDRA SERVICE NAMES - use EXACTLY these:
 - VNC: "vnc"
 - PostgreSQL: "postgres"
 - SMB: "smb"
-- HTTP: "http-get"
+- HTTP Basic Auth (browser login popup, not a page with a form): "http-get"
+- A web LOGIN FORM (a <form> on a page, e.g. "admin"/"password" fields and a
+  submit button -- this is the common case for a CMS/webapp admin login,
+  NOT "http-get" and NOT a database service name): "http-post-form" if the
+  form submits via POST (check the form's method attribute or just assume
+  POST unless you saw otherwise), "http-get-form" if it submits via GET.
+  These two need the extra path/body/cookie/success_string params documented
+  above -- a bare service name alone will fail immediately.
 
 HYDRA WORDLISTS - use these in order of speed:
 - Fast: "/usr/share/seclists/Passwords/Common-Credentials/top-20-common-SSH-passwords.txt"
@@ -113,9 +138,16 @@ progress. Pick a REAL exploitation/enumeration tool based on the port:
   often more direct than credential brute force.
 
 Respond with a tool chain using each tool's REAL parameter names from the list
-above. Format example (a web-port EXPLOIT chain, not a re-scan -- this is
-the shape your response should take when the goal says "exploit this
-port"): {"chain": [{"tool": "run_gobuster", "target": "http://10.0.0.5", "mode": "dir"}, {"tool": "run_sqlmap", "target": "http://10.0.0.5/login.php?id=1", "level": "2", "risk": "1"}]}
+above. Format example (a web-port EXPLOIT chain, not a re-scan -- this shows
+the JSON SHAPE only, not real values -- see the warning right after it):
+{"chain": [{"tool": "run_gobuster", "target": "http://10.0.0.5", "mode": "dir"}, {"tool": "run_sqlmap", "target": "http://10.0.0.5/CHANGE_THIS_PATH", "level": "2", "risk": "1"}]}
+"CHANGE_THIS_PATH" above is a placeholder, NOT a real path -- copying it
+literally (or grafting a query string like "?id=1" from it onto a real path
+you found) has been observed to produce a nonexistent URL. If prior recon
+output in this conversation already shows a real path (a gobuster/ffuf hit,
+a redirect target, a form action), use THAT exact path/query string --
+never a path from this example, never a guessed "?id=1"/"?page=1"-style
+query string that wasn't actually seen in real tool output.
 Never invent generic names like "param1"/"param2" -- use the exact names listed above."""
 
 # Constrains chain[].tool to a real, current tool name -- the model can no
@@ -169,8 +201,14 @@ def _detect_exploit_success(tool, output):
     if tool == "run_hydra":
         # Hydra only prints a "[port][service] host: ... login: ...
         # password: ..." line for an actual hit -- unlike medusa/ncrack it
-        # does not echo per-attempt progress to stdout by default.
-        return bool(re.search(r"\[\d+\]\[\w+\]\s+host:.*login:.*password:", output, re.IGNORECASE))
+        # does not echo per-attempt progress to stdout by default. The
+        # service name uses [\w-] (not \w) specifically because
+        # "http-get-form"/"http-post-form" contain hyphens -- \w alone
+        # silently never matches those and would make a genuine http-form
+        # breach invisible to this detector, confirmed the hard way against
+        # a real hydra http-get-form success line finding DVWA's real
+        # admin/password credential.
+        return bool(re.search(r"\[\d+\]\[[\w-]+\]\s+host:.*login:.*password:", output, re.IGNORECASE))
     if tool == "run_medusa":
         return "ACCOUNT FOUND" in output
     if tool == "run_ncrack":
@@ -574,12 +612,29 @@ def _extract_directory_leads(base_url, tool, output):
 
 def _scan_content_for_secret(url, output, port, memory, log_lines, source):
     """Deterministic (regex, not LLM) check of already-fetched content for
-    an obvious leaked secret. Records a finding and returns True on a hit."""
+    an obvious leaked secret. Records a finding and returns True on a hit.
+
+    NOTE: a hit here means "a lead worth acting on", NOT "exploit confirmed".
+    A leaked config file containing a DB password is real intel, but it is
+    not itself unauthorized access -- something still has to *use* that
+    credential (log in, connect, replay it) before this is a landed
+    exploit. Confirmed on a real DVWA target: this used to be wired
+    straight into run_attack_loop's `success` flag, so finding
+    config.inc.php.bak (routine DVWA sample content, not even a real fresh
+    secret) caused the loop to declare the port BREACHED and skip every
+    remaining round -- before the model ever got a chance to act on the
+    lead, let alone attempt the actual RCE/SQLi/webshell techniques a
+    manual baseline pass confirmed the target is vulnerable to. Callers
+    must NOT treat this return value as a breach signal -- see
+    _detect_exploit_success for what an actual confirmed exploit looks
+    like."""
     if output and _SECRET_PATTERNS.search(output):
         memory.add_finding(port, f"run_curl (auto {source})", f"{url}:\n{compress_tool_output(output, max_lines=20)}")
-        log.info(f"[SUCCESS] 🎉😄 Auto-escalation found a real secret at {url}")
+        log.info(f"[LEAD] 🔎 Auto-escalation found a leaked secret at {url} (not yet a confirmed breach)")
         log_lines.append(
-            f"  [auto-curl:{source}] {url}: LEAKED CREDENTIALS/SECRET -- {compress_tool_output(output, max_lines=5)}"
+            f"  [auto-curl:{source}] {url}: LEAKED CREDENTIALS/SECRET (use these -- try them against a login "
+            f"form, database, or admin panel before assuming they're worthless) -- "
+            f"{compress_tool_output(output, max_lines=5)}"
         )
         return True
     log_lines.append(f"  [auto-curl:{source}] {url}: fetched, no secret pattern matched")
@@ -737,15 +792,26 @@ def run_attack_loop(target, memory, cache=None):
             f"Exploit this port with any available tool. Try multiple tools if needed."
         )
         base_url = f"http://{target}" if str(port) == "80" else f"http://{target}:{port}"
+        # `success` means "a confirmed exploit landed" (_detect_exploit_success
+        # on real tool output) -- NOT "a lead was found". Pre-flight and the
+        # post-round escalation below can surface leaked secrets/credentials,
+        # which are real intel worth feeding into the next round's prompt,
+        # but they must never set `success` themselves or the loop declares
+        # victory and skips every remaining round before the model (or a
+        # follow-up deterministic step) ever tries to actually use the lead --
+        # confirmed on a real DVWA target where this exact conflation caused
+        # the loop to stop at a leaked config.inc.php.bak instead of reaching
+        # the RCE/SQLi/webshell techniques a manual baseline pass confirmed
+        # were exploitable there.
         success = False
         history = []
         if str(port) in _COMMON_WEB_PORTS:
-            success, preflight_log_lines = _run_deterministic_preflight(base_url, port, memory, cache)
+            leads_found, preflight_log_lines = _run_deterministic_preflight(base_url, port, memory, cache)
             if preflight_log_lines:
                 log.info(f"[ESCALATE] Pre-flight probe on port {port} (.env/.git/robots.txt, before any model round):\n" + "\n".join(preflight_log_lines))
                 history.append("Pre-flight:\n" + "\n".join(preflight_log_lines))
-            if success:
-                log.info(f"[ATTACK] Port {port}: deterministic pre-flight found a real breach -- skipping model rounds entirely")
+            if leads_found:
+                log.info(f"[ATTACK] Port {port}: pre-flight found a lead (leaked secret/listing) -- continuing to model rounds so it can be acted on")
         seen_chain_signatures = set()
         round_num = 1
         while round_num <= MAX_ATTACK_ROUNDS and not success:
@@ -762,10 +828,15 @@ def run_attack_loop(target, memory, cache=None):
                     f"breach yet:\n{recent_history}\n\n"
                     f"Build on these REAL results -- e.g. if a directory or file was "
                     f"discovered, fetch or inspect it (run_curl/run_command); if a login "
-                    f"form or endpoint was found, attack it directly. Do NOT repeat a "
-                    f"tool+target you already ran that produced no new lead. If you "
-                    f"genuinely have nothing further to try, respond with an empty chain: "
-                    f'{{"chain": []}}.'
+                    f"form or endpoint was found, attack it directly. If a LEAKED "
+                    f"CREDENTIALS/SECRET line appears above, that is a username/password "
+                    f"or key you must actually try next -- against a login form "
+                    f"(run_curl with the credential as POST data), a database service "
+                    f"(run_hydra/run_command), or an admin panel -- a leaked credential "
+                    f"you never attempt to use is a wasted lead, not a finding. Do NOT "
+                    f"repeat a tool+target you already ran that produced no new lead. If "
+                    f"you genuinely have nothing further to try, respond with an empty "
+                    f'chain: {{"chain": []}}.'
                 )
             log.info(f"[ATTACK] Port {port} round {round_num}/{MAX_ATTACK_ROUNDS}")
             data = call_model(goal)
@@ -786,14 +857,13 @@ def run_attack_loop(target, memory, cache=None):
             success, round_log_lines, step_outputs = _run_chain_against_port(chain, port, memory, cache, goal)
 
             if not success and step_outputs:
-                esc_success, esc_log_lines = _deterministic_recon_escalation(
+                leads_found, esc_log_lines = _deterministic_recon_escalation(
                     base_url, port, memory, cache, step_outputs
                 )
                 if esc_log_lines:
                     round_log_lines += esc_log_lines
-                if esc_success:
-                    success = True
-                    log.info(f"[ATTACK] Port {port}: deterministic escalation found a real breach -- skipping further rounds")
+                if leads_found:
+                    log.info(f"[ATTACK] Port {port}: deterministic escalation found a lead (leaked secret/listing) -- feeding it into the next round instead of stopping")
 
             history.append(f"Round {round_num}:\n" + "\n".join(round_log_lines))
             round_num += 1

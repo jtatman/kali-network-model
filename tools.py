@@ -49,7 +49,7 @@ class ToolExecutor:
         elif tool == "run_sqlmap":
             return self._run_sqlmap(
                 params.get("target", ""), params.get("technique", "B"), params.get("dbms", ""),
-                params.get("level", "1"), params.get("risk", "1"),
+                params.get("level", "1"), params.get("risk", "1"), params.get("cookie", ""),
             )
         elif tool == "run_nikto":
             return self._run_nikto(params.get("target", ""), params.get("port", "80"), params.get("ssl", False))
@@ -57,13 +57,15 @@ class ToolExecutor:
             return self._run_hydra(
                 params.get("target", ""), params.get("service", "ssh"), params.get("username", ""),
                 params.get("wordlist", "/usr/share/seclists/Passwords/Common-Credentials/darkweb2017_top-1000.txt"),
-                params.get("threads", "16"),
+                params.get("threads", "16"), params.get("path", ""), params.get("body", ""),
+                params.get("cookie", ""), params.get("success_string", ""), params.get("failure_string", ""),
             )
         elif tool == "run_searchsploit":
             return self._run_searchsploit(params.get("keyword", ""), params.get("type", ""))
         elif tool == "run_curl":
             return self._run_curl(
-                params.get("url", ""), params.get("method", "GET"), params.get("headers", ""), params.get("data", "")
+                params.get("url", ""), params.get("method", "GET"), params.get("headers", ""),
+                params.get("data", ""), params.get("cookie", ""),
             )
         elif tool == "run_wget":
             return self._run_wget(params.get("url", ""), params.get("output", ""), params.get("recursive", False))
@@ -156,12 +158,24 @@ class ToolExecutor:
             return ss_result
         return result
 
-    def _run_sqlmap(self, target, technique, dbms, level, risk):
+    def _run_sqlmap(self, target, technique, dbms, level, risk, cookie=None):
         if not target:
             return {"status": "error", "error_type": "invalid_params", "message": "No target URL specified for sqlmap"}
-        command = f"sqlmap -u {target} --technique={technique} --level={level} --risk={risk}"
+        # target is almost always a URL with a query string ("?id=1&Submit=Submit")
+        # -- unquoted, the remote shell treats "&" as a background-job
+        # separator and silently truncates the command after the first
+        # param, which then fails on whatever's left over as a bogus
+        # command name. Confirmed the hard way against a real DVWA target.
+        command = f"sqlmap -u {shlex.quote(target)} --technique={technique} --level={level} --risk={risk}"
         if dbms:
             command += f" --dbms={dbms}"
+        if cookie:
+            # Needed for any endpoint gated behind a login (kali-network-model-z7s:
+            # e.g. DVWA's own SQLi pages 404/redirect without a real PHPSESSID +
+            # security=low cookie pair -- confirmed real via
+            # playbooks/dvwa_full_chain.sh). Pass the exact Cookie header value
+            # (e.g. "PHPSESSID=abc123; security=low"), not just a session id.
+            command += f' --cookie="{cookie}"'
         command += " --batch"
         return self._execute_command(command)
 
@@ -172,7 +186,31 @@ class ToolExecutor:
         command = f"nikto -h {target} -p {port} -Format txt"
         return self._execute_command(command)
 
-    def _run_hydra(self, target, service, username, wordlist, threads):
+    @staticmethod
+    def _split_host_port_path(target):
+        """hydra's http-post-form/http-get-form modes take a bare host (or
+        host:port) as their own positional target and expect the URL path
+        (with query string, for a GET form) as a separate field inside the
+        form-string -- unlike every other hydra service, which takes
+        host[:port] directly. This lets a caller still pass a full URL for
+        `target` (as every other tool in this file expects) and have the
+        host/port/path split out automatically."""
+        t = target
+        if "://" in t:
+            t = t.split("://", 1)[1]
+        if "/" in t:
+            host_port, path = t.split("/", 1)
+            path = "/" + path
+        else:
+            host_port, path = t, ""
+        if ":" in host_port:
+            host, port = host_port.split(":", 1)
+        else:
+            host, port = host_port, None
+        return host, port, path
+
+    def _run_hydra(self, target, service, username, wordlist, threads,
+                    path=None, body=None, cookie=None, success_string=None, failure_string=None):
         if not target or not service:
             return {
                 "status": "error",
@@ -185,6 +223,43 @@ class ToolExecutor:
         # (confirmed repeatedly against a real model), so don't depend on it.
         username = username or "admin"
         wordlist = wordlist or "/usr/share/seclists/Passwords/Common-Credentials/darkweb2017_top-1000.txt"
+
+        if service in ("http-post-form", "http-get-form"):
+            # kali-network-model-zmm: a web LOGIN FORM is not a network
+            # service like ssh/mysql -- hydra needs its own dedicated
+            # form-string syntax to brute-force one at all. Before this,
+            # every web-login brute-force attempt in this session's manual
+            # baseline was impossible through the scripted tool, and the
+            # live model (confirmed against a real target) fell back to
+            # guessing "mysql" as the service against an http:// target,
+            # which cannot work.
+            host, url_port, url_path = self._split_host_port_path(target)
+            form_path = path or url_path
+            if not host or not form_path or not body:
+                return {
+                    "status": "error",
+                    "error_type": "invalid_params",
+                    "message": (
+                        f"{service} requires: target (host, or a full URL to derive host/path "
+                        f"from), path (e.g. '/login.php' -- falls back to any path already in "
+                        f"target), and body (the exact form field string with ^USER^/^PASS^ "
+                        f"placeholders, e.g. 'username=^USER^&password=^PASS^&Login=Login')"
+                    ),
+                }
+            # H= MUST come before F=/S= in hydra's own field order, or hydra
+            # silently misparses the whole string -- this exact bug was
+            # found and fixed the hard way building
+            # playbooks/dvwa_full_chain.sh (a real hydra http-get-form run
+            # against DVWA's brute-force page).
+            form_parts = [form_path, body]
+            if cookie:
+                form_parts.append(f"H=Cookie\\: {cookie}")
+            form_parts.append(f"S={success_string}" if success_string else f"F={failure_string or 'incorrect'}")
+            form_string = ":".join(form_parts)
+            port_flag = f"-s {url_port} " if url_port else ""
+            command = f'hydra -l {username} -P {wordlist} -t {threads} {port_flag}{host} {service} "{form_string}"'
+            return self._execute_command(command)
+
         command = f"hydra -l {username} -P {wordlist} -t {threads} -I {service}://{target}"
         return self._execute_command(command)
 
@@ -196,12 +271,22 @@ class ToolExecutor:
             command += f" -t {type_filter}"
         return self._execute_command(command)
 
-    def _run_curl(self, url, method, headers, data):
+    def _run_curl(self, url, method, headers, data, cookie=None):
         if not url:
             return {"status": "error", "error_type": "invalid_params", "message": "No URL specified for curl"}
         command = f'curl -X {method} "{url}"'
         if headers:
             command += f' -H "{headers}"'
+        if cookie:
+            # kali-network-model-z7s: without this, every authenticated
+            # endpoint (a page behind a login, e.g. DVWA's own vuln pages)
+            # is unreachable through this tool -- confirmed real via
+            # playbooks/dvwa_full_chain.sh, which needed a live PHPSESSID
+            # cookie for 5 of 10 techniques. Pass the exact Cookie header
+            # value (e.g. "PHPSESSID=abc123; security=low"), not just a bare
+            # session id -- most apps (DVWA included) also gate behavior on
+            # a second cookie (a security-level flag, a CSRF-adjacent value).
+            command += f' -b "{cookie}"'
         if data and method in ["POST", "PUT", "PATCH"]:
             command += f" -d '{data}'"
         command += " -v"
