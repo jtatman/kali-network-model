@@ -21,6 +21,13 @@ def _get_int(key, default):
     return int(value) if value else default
 
 
+def _get_bool(key, default):
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 class Config:
     def __init__(self):
         # Ollama (native /api/chat, not the OpenAI-compat shim)
@@ -57,6 +64,19 @@ class Config:
         # otherwise silently shadow the real tool (confirmed on a real box:
         # different flags entirely, "-h" isn't even valid).
         self.HTTPX_BIN = _get("HTTPX_BIN", "httpx-toolkit")
+
+        # Training-data pipeline-chain-building safety gate. False by
+        # default: training-data/scripts/pipeline_chain_builder.py must stop
+        # at the stage-1 (recon/enumeration/identification) -> stage-2
+        # (credential attack / exploit-craft / exploit-deploy) boundary and
+        # report the stage-1 lead instead of auto-continuing into stage 2,
+        # unless this is explicitly set true. Deliberately NOT read
+        # anywhere in agent.py's live engage/run_attack_loop path -- by
+        # design (see kali-network-model bd issue), that path's existing
+        # recon-then-attack-loop behavior against an authorized target is
+        # unchanged; this only gates the separate offline harness used to
+        # generate more multi-turn fine-tune examples against the lab.
+        self.ALLOW_FULL_PIPELINE_CHAINS = _get_bool("ALLOW_FULL_PIPELINE_CHAINS", False)
 
     def validate(self):
         errors = []

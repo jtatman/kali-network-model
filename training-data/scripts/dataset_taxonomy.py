@@ -47,17 +47,33 @@ _LEVEL1_TOOLS = {
     "run_nikto", "run_gobuster", "run_enum4linux", "run_subfinder",
     "run_nuclei", "run_katana", "run_ffuf", "run_httpx", "run_searchsploit",
 }
-_LEVEL3_TOOLS = {"run_hydra", "run_john", "run_ncrack", "run_medusa"}
+_LEVEL3_TOOLS = {"run_hydra", "run_john", "run_ncrack", "run_medusa", "run_setoolkit"}
 
 # Payload/flag markers that push a normally-benign tool (run_curl, run_sqlmap,
-# run_command, run_metasploit, run_setoolkit) up to level 3. Matched against
-# the JSON-serialized chain, case-insensitive.
+# run_command, run_metasploit) up to level 3. Matched against the
+# JSON-serialized chain, case-insensitive.
 _EXPLOIT_MARKER_RE = re.compile(
     r"--dump\b|--os-shell|--os-cmd|--os-pwn|"
     r"\bsystem\s*\(|\beval\s*\(|\bexec\s*\(|"
     r"functions\.php|theme-editor|webshell|"
     r"\bshellshock\b|\(\)\s*\{\s*:;\s*\}|"  # shellshock payload shape
     r"\buse\s+exploit|\brun\s*$|\bexploit\s*$",  # metasploit use/run/exploit
+    re.IGNORECASE,
+)
+
+# 84% of the corpus (baseline_cleaned, via converted_baseline.jsonl) wraps
+# every command as a single run_command STRING, not a structured tool
+# call -- so _LEVEL3_TOOLS (matched against the structured `tool` field)
+# never fires for a real credential-attack/exploit binary invoked that
+# way. Confirmed via live evaluation this session: `hydra -l admin -P ...
+# http-post-form`, `mimikatz lsadump::dcsync ...`, `aircrack-ng
+# capture.cap`, `aireplay-ng -9 ...`, `setoolkit -t 1 -a 3 ...` were all
+# mis-tagged active_enumeration before this regex existed. Matched
+# against the raw command text (via the same `blob` classify_danger_level
+# already builds), not just the structured tool name.
+_EXPLOIT_TOOL_NAME_RE = re.compile(
+    r"\b(hydra|medusa|ncrack|john|mimikatz|aircrack-ng|aireplay-ng|"
+    r"setoolkit|msfconsole|msfvenom)\b",
     re.IGNORECASE,
 )
 
@@ -99,6 +115,8 @@ def classify_danger_level(row):
         return 3, "credential_attack_tool"
     if _EXPLOIT_MARKER_RE.search(blob):
         return 3, "exploit_payload_marker"
+    if _EXPLOIT_TOOL_NAME_RE.search(blob):
+        return 3, "exploit_tool_name_in_raw_command"
     if row.get("scope") == "exploit_authorized" and any(
         step.get("tool") in ("run_curl", "run_sqlmap") and step.get("cookie")
         for step in chain if isinstance(step, dict)
@@ -151,11 +169,32 @@ def classify_safeguards(row):
     return sorted(tags)
 
 
+# --- pipeline_stage ---------------------------------------------------------
+# A second axis, orthogonal to danger_level: which side of the
+# scan/enumerate/identify -vs- craft-exploit/deploy-exploit boundary a row
+# falls on. This mirrors the stage-1/stage-2 tool split being added to
+# agent.py/tools.py itself (a live-agent safety gate requiring an explicit
+# override before a single chain/pipeline is allowed to run straight from
+# stage 1 into stage 2 unattended) -- see kali-network-model bd issues for
+# that gate's own tracking. Here it's just a label: stage_1 rows are always
+# safe to include anywhere; stage_2 rows are the ones a downstream
+# consumer without this repo's own lab-authorization context should
+# probably gate behind the same kind of explicit opt-in.
+def classify_pipeline_stage(row):
+    level, _ = classify_danger_level(row)
+    if level <= 1:
+        return "stage_1"
+    return "stage_2"
+
+
 def tag_row(row):
     level, rule = classify_danger_level(row)
+    stage = classify_pipeline_stage(row)
     return {
         "danger_level": level,
         "danger_level_name": DANGER_LEVEL_NAMES[level],
         "danger_rule": rule,
         "safeguards": classify_safeguards(row),
+        "pipeline_stage": stage,
+        "requires_override": stage == "stage_2",
     }

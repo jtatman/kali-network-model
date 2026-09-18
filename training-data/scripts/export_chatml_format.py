@@ -57,6 +57,7 @@ def build_conversation(rows, threading_confidence):
     all_tags = [tag_row(r) for r in rows]
     max_level_tag = max(all_tags, key=lambda t: t["danger_level"])
     safeguards = sorted(set().union(*(set(t["safeguards"]) for t in all_tags)))
+    requires_override = any(t["requires_override"] for t in all_tags)
     return {
         "messages": messages,
         "metadata": {
@@ -67,6 +68,8 @@ def build_conversation(rows, threading_confidence):
             "danger_level_name": max_level_tag["danger_level_name"],
             "danger_rule": max_level_tag["danger_rule"],
             "safeguards": safeguards,
+            "pipeline_stage": "stage_2" if requires_override else "stage_1",
+            "requires_override": requires_override,
             "turns": len(rows),
             "threading_confidence": threading_confidence,
         },

@@ -6,6 +6,25 @@ Ollama models (BaronLLM/`pentest-agent`, `pentest-agent-alt`) struggle with —
 see `mnemoria/` and `bd show kali-network-model-8jq` for the concrete,
 live-verified gap this is meant to close.
 
+## Pipeline-chain-building safety gate
+
+`scripts/pipeline_chain_builder.py` is a separate offline harness (NOT a
+REPL command, does not touch `agent.py`'s live `engage`/`run_attack_loop`
+path at all) for generating more real, live-verified multi-turn examples
+by actually running stage-1 (recon/enumeration/identification) tools
+against the lab, piping/tee-ing their real output into a follow-on stage-2
+(credential attack / exploit-craft / exploit-deploy) step. It's gated by
+`CONFIG.ALLOW_FULL_PIPELINE_CHAINS` (`.env`, default `false`): a recipe's
+stage-1 step(s) always run for real; stage 2 only runs if that flag is
+explicitly set true, otherwise the harness stops at the boundary and
+records a stage-1-only row (`stage_2_blocked_pending_override: true`) —
+"it's fine to string enumeration straight into exploitation against a
+local known-vulnerable lab container, but that has to be an overt,
+deliberate opt-in, never a default that could also fire against something
+that isn't actually the authorized lab." Output goes to
+`pipeline_chains_generated.jsonl`, reviewed by hand before being added to
+`merge_scripts_format.py`'s `SOURCES` list — not auto-merged.
+
 ## Gold-standard plan: two exported formats
 
 This corpus is built once, from the same underlying reviewed rows, into
@@ -64,9 +83,20 @@ embeds a real-looking cookie/nonce/token — scrub before any external
 sharing), `tradecraft_sensitive` (level-4 content).
 
 Current tag distribution over `combined_chatml_format.jsonl` (1178
-conversations): 128 `passive_recon`, 937 `active_enumeration`, 2
-`authenticated_access`, 59 `active_exploitation`, 52
-`destructive_or_evasive`. The 52 destructive/evasive rows are all from
+conversations): 128 `passive_recon`, 804 `active_enumeration`, 2
+`authenticated_access`, 192 `active_exploitation`, 52
+`destructive_or_evasive`. (An earlier pass under-counted
+`active_exploitation` at 59 — `_LEVEL3_TOOLS`/`_EXPLOIT_MARKER_RE` only
+matched a *structured* `tool` field or a narrow flag/payload regex, so a
+credential-attack/exploit binary invoked as raw text inside a
+`run_command` string — 84% of the corpus is `run_command`-wrapped — went
+undetected: confirmed live via an evaluation pass this session that
+`hydra ... http-post-form`, `mimikatz lsadump::dcsync ...`,
+`aircrack-ng capture.cap`, and `setoolkit -t 1 -a 3 ...` were all
+mis-tagged `active_enumeration`. Fixed by adding `_EXPLOIT_TOOL_NAME_RE`,
+matched against the raw command text too, and adding `run_setoolkit` to
+`_LEVEL3_TOOLS`, which it was missing from entirely.) The 52
+destructive/evasive rows are all from
 `baseline_cleaned` (the deliberately-kept tradecraft subset below) — worth
 independently confirming nothing else in the corpus should carry that tag,
 since the regex list is a starting keyword set, not exhaustive (e.g. it
@@ -230,6 +260,27 @@ actually be run against.
 
 ## Known gaps
 
+- **Severe tool-usage imbalance, confirmed by a live evaluation pass this
+  session.** `run_command` accounts for 1012/1192 chain steps (85%);
+  `run_nmap` is next at 110; everything else is single digits. 9 of the 25
+  `SUPPORTED_TOOLS` have zero *structured* examples (`run_masscan`,
+  `run_naabu`, `run_netstat`, `run_nikto`, `read_file`, `run_ncrack`,
+  `run_medusa`, `run_setoolkit`, `run_katana`), and 4 of those
+  (`run_netstat`, `run_ncrack`, `run_medusa`, `run_katana`) have **zero
+  representation anywhere**, including as raw `run_command` text. A
+  fine-tune on this corpus as-is won't see real examples of those tools.
+  Prioritize these when adding `pipeline_chain_builder.py` recipes.
+- **Param-name validation and SYSTEM_PROMPT-vs-`tools.py` drift: both
+  independently confirmed clean this session.** A 105-row stratified
+  sample plus a full pass over all 1192 rows found 0 chain-step params
+  that don't match what `tools.py`'s `execute_tool()`/`_run_*` methods
+  actually read; every documented tool param/default in `agent.py`'s
+  `SYSTEM_PROMPT` (hydra wordlists/service names, naabu's `-host`
+  requirement, gobuster/ffuf wordlist defaults, sqlmap cookie handling)
+  matches the real implementation. `CHAIN_JSON_SCHEMA` importing
+  `tools.SUPPORTED_TOOLS` directly makes tool-name drift structurally
+  impossible; this confirms the *param-level* documentation hasn't drifted
+  either.
 - **Multi-turn value against a live Kali target is not independently
   validated yet.** The corpus *contains* real multi-turn examples
   (`playbook_dvwa.jsonl`, `exports_transcript2_extracted.jsonl`), but
