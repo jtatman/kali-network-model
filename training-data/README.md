@@ -29,6 +29,48 @@ in**: the seed `naabu_nuclei_pipe_live` recipe's live run against
 was run twice, once with the override off and once on, both times taking
 the identical recon-only path since this recipe has no `stage_2`).
 
+### Template-generated recipes, and farming this out across machines
+
+Hand-authoring one concrete recipe at a time doesn't scale to the ~60-70%
+multi-turn target (see Known Gaps). `scripts/pipeline_recipes.py` now
+holds TEMPLATES instead: one validated (or candidate) skeleton plus a
+`variations` list of parameter substitutions, expanded at runtime into
+many concrete recipes (`{template_id}__v{n}`) by
+`pipeline_chain_builder.py`. A template's `verified` field is honesty
+bookkeeping, not a gate — `True` (this exact chain ran clean this
+session), `"components_only"` (every sub-step proven elsewhere, not yet
+re-run as this exact chain), or `False` (a plausible candidate, not yet
+run at all). Unverified templates are deliberately included, not
+withheld: the harness now tracks real failures (`stage_1_failed`) as
+legitimate negative training signal instead of discarding them, so an
+untested template "failing informatively" when actually run is useful,
+not wasted. Confirmed this pass: `nmap_vuln_script_searchsploit` and
+`httpx_nuclei_pipe` (both previously `False`/`components_only`) ran clean
+on first live try; `naabu_nuclei_pipe_dast` (`-dast -t dast/http/`)
+produced a real `command_failed` — kept in `pipeline_chains_generated.jsonl`
+for review, correctly excluded from the trusted merge.
+
+New CLI: `--list` (print candidates without running), `--limit N`,
+`--filter SUBSTRING`, `--verified-only`, `--shuffle`, `--out PATH`. The
+`--out`/`--shuffle` pair is the farming mechanism: point a different
+machine's `.env` at its own Kali target, run
+`pipeline_chain_builder.py --shuffle --out machineN_output.jsonl` there
+independently, copy the output file back, then run
+`scripts/merge_pipeline_chain_outputs.py machineN_output.jsonl [...]`
+once to dedupe everything into the canonical
+`pipeline_chains_generated.jsonl` — no need to labor over every step in
+one session when the same candidate list can run unattended on multiple
+machines in parallel.
+
+One rough edge from this refactor, not yet cleaned up: the two original
+hand-authored pathway names (`naabu_nuclei_pipe_live`,
+`masscan_nmap_searchsploit_chain`) don't match the new
+`{template_id}__v{n}` naming their template-generated equivalents use, so
+they show up as separate pathways in the merged corpus even though
+they're testing near-identical skeletons. Harmless for data integrity
+(each row is still a real, correctly-tagged example), just a naming
+inconsistency worth a rename pass later.
+
 ### The three-way scope: `recon_only` / `exploit_authorized` / `exploit_conditional`
 
 `exploit_conditional` sits between the other two, and it works
@@ -363,30 +405,29 @@ actually be run against.
   `login.php?id=1` few-shot contamination, the malformed `http-post-form`
   attempt). `real_outcomes` is preserved per row so a reviewer can filter/
   correct before merging.
-- `pipeline_chains_generated.jsonl` (2 unique rows, 4 raw —
-  `scripts/pipeline_chain_builder.py`) — real output of two recipes run
-  against `kali-agent-box`: `naabu_nuclei_pipe_live` (172.17.0.12, run
-  twice with the override off/on, deduped to 1 row — both took the
-  recon-only path since this recipe has no `stage_2`), and
-  `masscan_nmap_searchsploit_chain` (172.25.0.2-.7, a full masscan sweep →
-  awk-massaged host:port list → per-host `nmap -sV` service ID → a second
-  normalization pass → `searchsploit`, all as one `run_command` string —
-  see "Real massaging gotchas found this pass" above). Both entirely
-  stage-1/identification, so neither needed the override to actually run.
-  Now wired into `merge_scripts_format.py`'s `SOURCES`. **Still no
-  structured `run_naabu`/`run_masscan`/`run_searchsploit` calls** — every
-  row so far is a `run_command` shell pipe, not a structured tool call —
-  the tool-imbalance gap below is unchanged; more, genuinely different
-  recipes are still needed.
-- `combined_scripts_format.jsonl` (1198 examples, `scripts/merge_scripts_format.py`)
+- `pipeline_chains_generated.jsonl` (4 merge-eligible rows, 5 raw —
+  `scripts/pipeline_chain_builder.py` + `scripts/pipeline_recipes.py`'s
+  templates, deduped by `scripts/merge_pipeline_chain_outputs.py`) — real
+  output against `kali-agent-box`: the original hand-authored
+  `naabu_nuclei_pipe_live`/`masscan_nmap_searchsploit_chain` rows, plus
+  template-generated `nmap_vuln_script_searchsploit__v0` and
+  `httpx_nuclei_pipe__v0` (both ran clean on first live try) and
+  `naabu_nuclei_pipe_dast__v0` (a real `command_failed` — kept for review,
+  excluded from the merge via `stage_1_failed`). All entirely stage-1/
+  identification so far. **Still no structured `run_naabu`/`run_masscan`/
+  `run_searchsploit` calls** — every merge-eligible row is a `run_command`
+  shell pipe, not a structured tool call; the two-stage templates that
+  WOULD produce structured `run_hydra`/`run_gobuster`/`run_sqlmap` rows
+  are drafted in `pipeline_recipes.py` but not yet run with the override.
+- `combined_scripts_format.jsonl` (1200 examples, `scripts/merge_scripts_format.py`)
   — the deduped, tool-name-validated merge of every *reviewed* source above
   (excludes `logs_extracted_UNREVIEWED.jsonl` entirely, the 2 unreviewed
-  WordPress rows, and any `stage_2_blocked_pending_override` row). 2
-  cross-file exact duplicates dropped on this pass (the repeated
-  `pipeline_chains_generated.jsonl` runs above) — every other source
-  stayed at 0, they're disjoint by construction (within-file dedup already
-  happened in each source's own build script).
-- `combined_chatml_format.jsonl` (1182 conversations, `scripts/export_chatml_format.py`)
+  WordPress rows, and any `stage_2_blocked_pending_override`/
+  `stage_1_failed` row). 0 cross-file exact duplicates on this pass — every
+  source is disjoint by construction (within-file dedup already happened
+  in each source's own build script, or in
+  `merge_pipeline_chain_outputs.py` for the pipeline-chain rows).
+- `combined_chatml_format.jsonl` (1184 conversations, `scripts/export_chatml_format.py`)
   — the ChatML/general-purpose export of the same merged rows, with
   danger-level/safeguard tags and verified-vs-independent turn threading.
 
@@ -401,7 +442,24 @@ actually be run against.
   (`run_netstat`, `run_ncrack`, `run_medusa`, `run_katana`) have **zero
   representation anywhere**, including as raw `run_command` text. A
   fine-tune on this corpus as-is won't see real examples of those tools.
-  Prioritize these when adding `pipeline_chain_builder.py` recipes.
+  Still true after this pass — the new templates use structured
+  `run_gobuster`/`run_hydra`/`run_sqlmap` calls where they're gated behind
+  `stage_2`/the override (not yet run live), but everything that's
+  actually landed in the corpus so far is still `run_command` shell pipes
+  (masscan/naabu/httpx/nuclei/nmap chains). Prioritize `run_netstat`/
+  `run_ncrack`/`run_medusa`/`run_katana` specifically when adding new
+  templates.
+- **Structured cross-step value passing isn't supported yet.** A template
+  whose stage 2 needs a value stage 1 only discovers at runtime (a session
+  cookie, a CSRF token, a found credential) can't express that today — a
+  drafted `authenticated_sqli_dump_chain` template hit exactly this
+  (needed a live PHPSESSID from a login step fed into `run_sqlmap`'s
+  `cookie` param) and was removed rather than shipped broken; see
+  `pipeline_recipes.py`'s comment where it used to be. The `run_command`
+  shell-string chains sidestep this (`$host`/`$port` capture works
+  because it's all one shell invocation), but any future two-stage
+  template using separate STRUCTURED tool calls with a dynamically-
+  captured intermediate value needs a real mechanism here first.
 - **Param-name validation and SYSTEM_PROMPT-vs-`tools.py` drift: both
   independently confirmed clean this session.** A 105-row stratified
   sample plus a full pass over all 1192 rows found 0 chain-step params
@@ -419,14 +477,17 @@ actually be run against.
   escalation weak point rather than mirroring natural frequency (which
   would be single-turn-heavy, since most ports never need round 2 once
   the breach-conflation bug is fixed). Current actual: 11 verified-
-  sequential multi-turn conversations out of 1182 (still under 1%, up from
-  9/1179 this pass via one new live pipeline-chain row and one hand-
-  authored matched pair). Closing this gap is the single highest-priority
-  remaining item — `pipeline_chain_builder.py` recipes reaching a real
-  stage 2, and more hand-authored matched pairs like
-  `cve_conditional_exploit`, are the intended mechanisms, but building
-  enough of them to move this ratio meaningfully is still almost entirely
-  undone.
+  sequential multi-turn conversations out of 1184 (still under 1%).
+  Closing this gap is the single highest-priority remaining item.
+  `pipeline_chain_builder.py`'s template system (see "Template-generated
+  recipes, and farming this out across machines" above) plus the
+  multi-machine farming workflow is the intended path to actually move
+  this ratio, not one-at-a-time hand authoring — but every `stage_2` a
+  template reaches still needs `ALLOW_FULL_PIPELINE_CHAINS=true` run
+  against a real target to produce an actual 2-turn row, and that's still
+  almost entirely undone (`web_login_discovery_hydra_chain`'s two
+  variations are drafted and marked `"components_only"`, not yet run as
+  one chain).
 - **Multi-turn value against a live Kali target is not independently
   validated yet.** The corpus *contains* real multi-turn examples
   (`playbook_dvwa.jsonl`, `exports_transcript2_extracted.jsonl`), but

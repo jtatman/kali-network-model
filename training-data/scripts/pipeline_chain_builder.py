@@ -19,41 +19,34 @@ training-data rows, never a REPL command, and it uses the same production
 tools.py/remote_exec.py execution path as agent.py -- no parallel exec
 mechanism, just a stage-boundary check in front of it.
 
-A "recipe" is a plain dict:
-{
-    "pathway": <name, used as the pathway field>,
-    "target": <host/IP>,
-    "stage_1": [{"tool": ..., <params>}, ...],   # one or more chain steps,
-                                                  # always executed for real
-    "stage_2": [{"tool": ..., <params>}, ...],   # only executed if the
-                                                  # override is set; [] means
-                                                  # this recipe is
-                                                  # identification-only by
-                                                  # design (e.g. naabu->nuclei)
-}
+Recipes are now TEMPLATE-generated (pipeline_recipes.py), not hand-authored
+one at a time -- see that module's docstring for the template/variation-
+grid design. This is meant to be run repeatedly, on different machines
+(each pointed at its own lab via its own .env), with the real output
+farmed back for review/merging rather than every recipe being hand-tested
+in one session first. A stage-1 step that fails for real gets recorded
+with `stage_1_failed: true` and excluded from the trusted merge (see
+merge_scripts_format.py) but KEPT in the output file -- a wrong-syntax or
+unexpected-output failure is itself useful negative signal, not a wasted
+run.
 
-Recipes live in PIPELINE_RECIPES below -- add more there as new chains get
-validated against the lab (a background agent's job, per the user's
-request, is exactly this: keep adding/running recipes and confirming
-positive results). Output rows are appended to
-training-data/pipeline_chains_generated.jsonl in the same schema as
-combined_scripts_format.jsonl (goal/chain/scope/pathway/turn/source) plus
-an extra `_tags` object from dataset_taxonomy.tag_row and, on a blocked
-stage-1-only row, `stage_2_blocked_pending_override: true` -- so a later
-curation/merge pass can tell "legitimately no stage 2" apart from
-"stage 2 existed but was gated". These rows are NOT auto-merged into
-combined_scripts_format.jsonl -- review them (real command outputs can
-still be wrong/misleading) and run merge_scripts_format.py's SOURCES list
-to pick them up once satisfied. Underrepresented tools per the fork
-evaluation that ran during this session (run_masscan, run_naabu,
-run_netstat, run_nikto, read_file, run_ncrack, run_medusa, run_setoolkit,
-run_katana all have zero or near-zero structured examples in the merged
-corpus) should be prioritized when adding new recipes.
-
-Run: python3 training-data/scripts/pipeline_chain_builder.py
+Run: python3 training-data/scripts/pipeline_chain_builder.py [options]
+  --list              Print every candidate recipe (pathway, verified
+                       status, target) and exit without running anything.
+  --limit N            Run at most N recipes this invocation.
+  --filter SUBSTRING   Only run recipes whose template_id contains this.
+  --verified-only       Only run templates marked verified=True.
+  --shuffle             Randomize recipe order (useful when farming the
+                        same candidate list out across multiple machines
+                        so they don't all start with the same subset).
+  --out PATH            Write to a different output file than the default
+                        (e.g. a per-machine file to merge later with
+                        merge_pipeline_chain_outputs.py).
 """
+import argparse
 import json
 import os
+import random
 import re
 import sys
 
@@ -63,74 +56,10 @@ from tools import ToolExecutor  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(__file__))
 from dataset_taxonomy import tag_row  # noqa: E402
+from pipeline_recipes import all_recipes  # noqa: E402
 
 HERE = os.path.dirname(__file__)
-OUT_PATH = os.path.join(HERE, "..", "pipeline_chains_generated.jsonl")
-
-# Seed recipe: naabu piped into nuclei is identification-only (both tools
-# are stage 1 -- see dataset_taxonomy.STAGE handling), so it's a safe
-# always-runs example regardless of the override. Add stage_2 recipes here
-# once you have a specific, real exploit to pair with a real stage-1
-# finding on a currently-up lab container (check `docker ps` first --
-# container IPs/names drift between sessions).
-PIPELINE_RECIPES = [
-    {
-        "pathway": "naabu_nuclei_pipe_live",
-        "target": "172.17.0.12",
-        "stage_1": [
-            {
-                "tool": "run_command",
-                "command": (
-                    "naabu -host 172.17.0.12 -silent | tee naabu_out.txt "
-                    "| nuclei -silent -severity critical,high,medium -t http/"
-                ),
-            },
-        ],
-        "stage_2": [],
-    },
-    {
-        # masscan and searchsploit are never used back-to-back in the
-        # original 10 pathways -- this chains them anyway (per explicit
-        # request) via a multi-host masscan sweep -> awk-massaged
-        # host:port list -> per-host nmap -sV service ID -> a second
-        # awk/sed normalization pass -> searchsploit, all as ONE
-        # run_command pipe/&& string. Every stage tested live one at a
-        # time against the real InfoSecWarrior stack (172.25.0.2-.7)
-        # before being chained -- see training-data/README.md's "Real
-        # massaging gotchas found this pass" for what each transform is
-        # actually working around and why it's needed (masscan's -oG
-        # format puts one port per line, not comma-joined like nmap's;
-        # nmap's raw version string needs the OS-in-parens and daemon-
-        # name suffix stripped before searchsploit returns anything).
-        # Entirely stage-1/identification (masscan, nmap -sV, and
-        # searchsploit's plain lookup mode are all recon-tier) -- no
-        # stage_2 here, this recipe never needs the override.
-        "pathway": "masscan_nmap_searchsploit_chain",
-        "target": "172.25.0.2-172.25.0.7",
-        "stage_1": [
-            {
-                "tool": "run_command",
-                "command": (
-                    "masscan -p21,22,25,53,80,110,143,3306,8080 172.25.0.2-172.25.0.7 "
-                    "--rate 1000 --wait 0 -oG /tmp/masscan_out.txt >/dev/null 2>&1 && "
-                    "grep '^Timestamp' /tmp/masscan_out.txt | "
-                    "awk -F'\\t' '{host=$2; sub(/^Host: /,\"\",host); sub(/ \\(\\)$/,\"\",host); "
-                    "port=$3; sub(/^Ports: /,\"\",port); split(port,pp,\"/\"); print host\":\"pp[1]}' "
-                    "| tee /tmp/massaged_targets.txt >/dev/null && "
-                    "while IFS=: read -r host port; do "
-                    "nmap -sV -p\"$port\" --open -oG - \"$host\" 2>/dev/null | grep 'Ports:'; "
-                    "done < /tmp/massaged_targets.txt | "
-                    "awk -F'\\t' '{n=split($2,f,\"/\"); if (f[7] != \"\") print f[7]}' | "
-                    "sed -E 's/ \\(.*\\)//; s/ (httpd|smtpd|pop3d|imapd)( |$)/ /' | "
-                    "sort -u | tee /tmp/versions_normalized.txt >/dev/null && "
-                    "while read -r v; do echo \"--- $v ---\"; searchsploit \"$v\" 2>&1; done "
-                    "< /tmp/versions_normalized.txt"
-                ),
-            },
-        ],
-        "stage_2": [],
-    },
-]
+DEFAULT_OUT_PATH = os.path.join(HERE, "..", "pipeline_chains_generated.jsonl")
 
 
 def _goal_for_stage1(recipe):
@@ -175,6 +104,7 @@ def run_recipe(recipe, executor):
         stage1_results.append((step, result))
 
     stage1_summary = "\n".join(_summarize(s, r) for s, r in stage1_results)
+    stage1_failed = any(r.get("status") != "success" for _, r in stage1_results)
     row1 = {
         "goal": _goal_for_stage1(recipe),
         "chain": recipe["stage_1"],
@@ -182,10 +112,18 @@ def run_recipe(recipe, executor):
         "pathway": recipe["pathway"],
         "turn": 1,
         "source": "pipeline_chain_builder",
+        "template_id": recipe.get("template_id"),
+        "template_verified": recipe.get("verified"),
     }
+    if stage1_failed:
+        # Kept in the output file (real negative signal -- a wrong-syntax
+        # or unexpected-output attempt is worth reviewing, e.g. for
+        # failure_recovery.jsonl-style pairing), but excluded from the
+        # trusted merge -- see merge_scripts_format.py's SOURCES handling.
+        row1["stage_1_failed"] = True
     rows.append(row1)
 
-    if not recipe.get("stage_2"):
+    if stage1_failed or not recipe.get("stage_2"):
         return rows, stage1_results
 
     if not CONFIG.ALLOW_FULL_PIPELINE_CHAINS:
@@ -224,6 +162,7 @@ def run_recipe(recipe, executor):
         params = {k: v for k, v in step.items() if k != "tool"}
         result = executor.execute_tool(step["tool"], params)
         stage2_results.append((step, result))
+    stage2_failed = any(r.get("status") != "success" for _, r in stage2_results)
     row2 = {
         "goal": _goal_for_stage2(recipe, stage1_summary),
         "chain": recipe["stage_2"],
@@ -231,12 +170,45 @@ def run_recipe(recipe, executor):
         "pathway": recipe["pathway"],
         "turn": 2,
         "source": "pipeline_chain_builder",
+        "template_id": recipe.get("template_id"),
+        "template_verified": recipe.get("verified"),
     }
+    if stage2_failed:
+        row2["stage_1_failed"] = True  # reuses the same merge-exclusion flag name deliberately
     rows.append(row2)
     return rows, stage1_results + stage2_results
 
 
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--filter", type=str, default=None)
+    p.add_argument("--verified-only", action="store_true")
+    p.add_argument("--shuffle", action="store_true")
+    p.add_argument("--out", type=str, default=DEFAULT_OUT_PATH)
+    return p.parse_args()
+
+
 def main():
+    args = parse_args()
+    recipes = all_recipes()
+
+    if args.filter:
+        recipes = [r for r in recipes if args.filter in r["template_id"]]
+    if args.verified_only:
+        recipes = [r for r in recipes if r["verified"] is True]
+    if args.shuffle:
+        random.shuffle(recipes)
+    if args.limit:
+        recipes = recipes[: args.limit]
+
+    if args.list:
+        print(f"{len(recipes)} candidate recipes:")
+        for r in recipes:
+            print(f"  {r['pathway']:45s} verified={r['verified']!s:15s} target={r['target']}")
+        return
+
     try:
         CONFIG.validate()
     except ConfigError as e:
@@ -245,26 +217,37 @@ def main():
 
     print(
         f"ALLOW_FULL_PIPELINE_CHAINS={CONFIG.ALLOW_FULL_PIPELINE_CHAINS} "
-        f"(EXEC_MODE={CONFIG.EXEC_MODE}, DOCKER_CONTAINER={CONFIG.DOCKER_CONTAINER})"
+        f"(EXEC_MODE={CONFIG.EXEC_MODE}, DOCKER_CONTAINER={CONFIG.DOCKER_CONTAINER})\n"
+        f"Running {len(recipes)} recipe(s), writing to {args.out}"
     )
 
     executor = ToolExecutor()
     all_rows = []
-    for recipe in PIPELINE_RECIPES:
+    ok_count = 0
+    fail_count = 0
+    for recipe in recipes:
         print(f"\n=== {recipe['pathway']} (target={recipe['target']}) ===")
         rows, results = run_recipe(recipe, executor)
         for step, result in results:
             ok = result.get("status") == "success"
             print(f"  [{step['tool']}] {'OK' if ok else 'FAILED: ' + str(result.get('error_type'))}")
+        if any(r.get("stage_1_failed") for r in rows):
+            fail_count += 1
+        else:
+            ok_count += 1
         all_rows.extend(rows)
 
-    with open(OUT_PATH, "a") as f:
+    with open(args.out, "a") as f:
         for row in all_rows:
             enriched = dict(row)
             enriched["_tags"] = tag_row(row)
             f.write(json.dumps(enriched, ensure_ascii=False) + "\n")
 
-    print(f"\nAppended {len(all_rows)} rows to {OUT_PATH} (review before merging -- not auto-merged).")
+    print(
+        f"\nAppended {len(all_rows)} rows to {args.out} "
+        f"({ok_count} recipes clean, {fail_count} had a real failure -- "
+        "both kept for review, only clean ones are merge-eligible)."
+    )
 
 
 if __name__ == "__main__":

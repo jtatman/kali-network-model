@@ -84,7 +84,11 @@ def main():
         rows = load(fname)
         kept = 0
         for row in rows:
-            if row.get("reviewed") is False or row.get("stage_2_blocked_pending_override"):
+            if (
+                row.get("reviewed") is False
+                or row.get("stage_2_blocked_pending_override")
+                or row.get("stage_1_failed")
+            ):
                 unreviewed_dropped[fname] = unreviewed_dropped.get(fname, 0) + 1
                 continue
             chain = row.get("chain") or []
