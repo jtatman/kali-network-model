@@ -150,7 +150,14 @@ def classify_safeguards(row):
 
     tags.add("authorized_lab_only")  # true of every source in this corpus today
 
-    if row.get("source") in ("exports", "logs"):
+    # NOTE: "logs" here never matched anything -- the real source value is
+    # "logs_failure_recovery" (see merge_scripts_format.py's per-file
+    # `source` field). Fixed in the same pass that added
+    # "pipeline_chain_builder". `playbook` and `pathway_generator` are
+    # ALSO live-verified-or-copied-from-a-verified-source per their own
+    # build scripts' docstrings, but left untagged here deliberately --
+    # that's a real follow-up audit, not a typo fix like this one.
+    if row.get("source") in ("exports", "logs_failure_recovery", "pipeline_chain_builder"):
         tags.add("live_verified")
 
     if row.get("reviewed") is False:

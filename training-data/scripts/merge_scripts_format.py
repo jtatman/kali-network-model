@@ -9,6 +9,10 @@ export with danger-level/safeguard metadata, see export_chatml_format.py.
 Source selection (see training-data/README.md "Gold-standard plan" for the
 full reasoning):
   INCLUDED (reviewed or hand-verified, ready to train on):
+    - pipeline_chains_generated.jsonl (live-verified output of
+      pipeline_chain_builder.py -- minus any stage_2_blocked_pending_override
+      row, same reasoning as excluding reviewed==False below: an
+      incomplete/gated chain isn't ready to train on as-is)
     - converted_baseline.jsonl       (1000)
     - converted_nmap_capped.jsonl    (100, capped by design -- see convert_nmap.py)
     - generated_pathways.jsonl       (62)
@@ -48,6 +52,7 @@ DATA_DIR = os.path.join(HERE, "..")
 # of a duplicate (goal, chain) pair wins, so higher-confidence sources
 # should be listed first.
 SOURCES = [
+    "pipeline_chains_generated.jsonl",
     "playbook_dvwa.jsonl",
     "failure_recovery.jsonl",
     "exports_transcript1_extracted.jsonl",
@@ -79,7 +84,7 @@ def main():
         rows = load(fname)
         kept = 0
         for row in rows:
-            if row.get("reviewed") is False:
+            if row.get("reviewed") is False or row.get("stage_2_blocked_pending_override"):
                 unreviewed_dropped[fname] = unreviewed_dropped.get(fname, 0) + 1
                 continue
             chain = row.get("chain") or []
@@ -107,7 +112,7 @@ def main():
         s = stats[fname]
         extra = []
         if fname in unreviewed_dropped:
-            extra.append(f"{unreviewed_dropped[fname]} unreviewed dropped")
+            extra.append(f"{unreviewed_dropped[fname]} unreviewed/gated dropped")
         if fname in dupes_dropped:
             extra.append(f"{dupes_dropped[fname]} exact-dupes dropped")
         suffix = f" ({', '.join(extra)})" if extra else ""

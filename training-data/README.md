@@ -23,7 +23,11 @@ local known-vulnerable lab container, but that has to be an overt,
 deliberate opt-in, never a default that could also fire against something
 that isn't actually the authorized lab." Output goes to
 `pipeline_chains_generated.jsonl`, reviewed by hand before being added to
-`merge_scripts_format.py`'s `SOURCES` list — not auto-merged.
+`merge_scripts_format.py`'s `SOURCES` list — not auto-merged. **Now wired
+in**: the seed `naabu_nuclei_pipe_live` recipe's live run against
+`kali-agent-box` is in the merge as of this pass (1 row after dedup — it
+was run twice, once with the override off and once on, both times taking
+the identical recon-only path since this recipe has no `stage_2`).
 
 ## Gold-standard plan: two exported formats
 
@@ -82,10 +86,14 @@ target, output captured), `unverified_outcome` (source-flagged
 embeds a real-looking cookie/nonce/token — scrub before any external
 sharing), `tradecraft_sensitive` (level-4 content).
 
-Current tag distribution over `combined_chatml_format.jsonl` (1178
-conversations): 128 `passive_recon`, 804 `active_enumeration`, 2
-`authenticated_access`, 192 `active_exploitation`, 52
-`destructive_or_evasive`. (An earlier pass under-counted
+Current tag distribution over `combined_chatml_format.jsonl` (1179
+conversations, after wiring in `pipeline_chains_generated.jsonl`): 128
+`passive_recon`, 805 `active_enumeration`, 2 `authenticated_access`, 192
+`active_exploitation`, 52 `destructive_or_evasive`. `live_verified` is now
+16 (was 8) — `logs_failure_recovery` and `pipeline_chain_builder` weren't
+being matched (the code checked source `"logs"`, which never actually
+occurs; the real value is `"logs_failure_recovery"` — fixed in the same
+pass). (An earlier pass under-counted
 `active_exploitation` at 59 — `_LEVEL3_TOOLS`/`_EXPLOIT_MARKER_RE` only
 matched a *structured* `tool` field or a narrow flag/payload regex, so a
 credential-attack/exploit binary invoked as raw text inside a
@@ -140,6 +148,8 @@ raw_nmap_commands.jsonl  --scripts/convert_nmap.py-->  nmap_cleaned_full.jsonl  
                           exports/*.md mining forks  ──>  exports_transcript{1,2}_extracted.jsonl ─┤
                                                                                        │
                       scripts/build_failure_recovery.py  ──>  failure_recovery.jsonl ─┤
+                                                                                       │
+              scripts/pipeline_chain_builder.py (live, against the lab)  ──>  pipeline_chains_generated.jsonl ─┤
                                                                                        ▼
                                                         scripts/merge_scripts_format.py
                                                                                        │
@@ -248,13 +258,25 @@ actually be run against.
   `login.php?id=1` few-shot contamination, the malformed `http-post-form`
   attempt). `real_outcomes` is preserved per row so a reviewer can filter/
   correct before merging.
-- `combined_scripts_format.jsonl` (1192 examples, `scripts/merge_scripts_format.py`)
+- `pipeline_chains_generated.jsonl` (1 unique row so far, 2 raw —
+  `scripts/pipeline_chain_builder.py`) — real output of the seed
+  `naabu_nuclei_pipe_live` recipe run against `kali-agent-box`/172.17.0.12,
+  once with `ALLOW_FULL_PIPELINE_CHAINS=false` and once `=true`; both took
+  the same recon-only path since this recipe has no `stage_2` step, so
+  they deduped to 1 row on merge. Now wired into
+  `merge_scripts_format.py`'s `SOURCES`. **Still only covers `run_naabu`/
+  `run_nuclei`, and even then as a `run_command` shell pipe, not a
+  structured tool call** — the tool-imbalance gap below is unchanged by
+  this row; more, genuinely different recipes are still needed.
+- `combined_scripts_format.jsonl` (1193 examples, `scripts/merge_scripts_format.py`)
   — the deduped, tool-name-validated merge of every *reviewed* source above
-  (excludes `logs_extracted_UNREVIEWED.jsonl` entirely and the 2 unreviewed
-  WordPress rows). 0 cross-file exact duplicates found on this pass (the
-  sources are disjoint by construction — within-file dedup already
+  (excludes `logs_extracted_UNREVIEWED.jsonl` entirely, the 2 unreviewed
+  WordPress rows, and any `stage_2_blocked_pending_override` row). 1
+  cross-file exact duplicate dropped on this pass (the repeated
+  `pipeline_chains_generated.jsonl` run above) — every other source stayed
+  at 0, they're disjoint by construction (within-file dedup already
   happened in each source's own build script).
-- `combined_chatml_format.jsonl` (1178 conversations, `scripts/export_chatml_format.py`)
+- `combined_chatml_format.jsonl` (1179 conversations, `scripts/export_chatml_format.py`)
   — the ChatML/general-purpose export of the same merged rows, with
   danger-level/safeguard tags and verified-vs-independent turn threading.
 
