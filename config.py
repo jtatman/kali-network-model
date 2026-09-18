@@ -7,6 +7,24 @@ startup so misconfiguration fails immediately, not mid-engagement.
 
 import os
 
+# Loads .env into the process environment if present (searches upward from
+# the current working directory) -- explicit os.environ values still win,
+# so `FOO=bar python3 agent.py` continues to override .env. Previously
+# nothing loaded .env at all; every entry point (agent.py, the
+# training-data/scripts/ harnesses) required manually exporting it into
+# the shell first (`set -a && source .env && set +a`), which is easy to
+# forget and produces a CONFIG.validate() error that looks like missing
+# values rather than an unloaded file. python-dotenv is now in
+# requirements.txt, but fall back to the old manual-export behavior
+# (rather than a hard ImportError) if it isn't installed yet in whatever
+# environment is running this -- config.py failing to import at all would
+# be a worse regression than just not auto-loading .env.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 class ConfigError(Exception):
     """Raised by Config.validate() when required settings are missing or invalid."""
