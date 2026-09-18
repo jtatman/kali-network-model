@@ -25,7 +25,24 @@ include its real parameters (the schema allows extra fields, but a tool call
 with no target/url/filename etc. will simply fail):
 - run_command: command
 - run_masscan: target, ports (default "1-65535"), rate (default "1000")
-- run_nmap: target, flags (default "-sV")
+- run_nmap: target, flags (default "-sV"). Use "-sV --script vuln,http-enum" for
+  real NSE vulnerability/identification scripts -- this works fine even in an
+  unprivileged container with only NET_RAW/NET_ADMIN capabilities (no full
+  --privileged needed), confirmed against a real target including OS
+  detection (-O), the single most raw-socket-hungry nmap feature.
+- run_naabu: host (REQUIRED -- unlike nmap/masscan, naabu has NO positional
+  target argument at all; omitting host fails immediately), ports, top_ports,
+  rate. naabu is a fast port-discovery stage meant to feed a SEPARATE next
+  tool, not a general nmap/masscan replacement -- its -silent output is bare
+  "host:port" lines, exactly the shape a follow-up nuclei run wants. To
+  actually chain them, use run_command with a real shell pipe: run_command
+  {"command": "naabu -host <target> -silent | nuclei -silent -severity
+  critical,high,medium -t <template-category>/"} -- ALWAYS include -t/-severity
+  on the nuclei side, since an unscoped nuclei run loads its full ~16k-template
+  set and can take many minutes even against one host. To keep the raw naabu
+  list for a later, separate step, tee it while still piping live: "naabu
+  -host <target> -silent | tee naabu_out.txt | nuclei ..." then a later
+  run_command can read naabu_out.txt directly without re-scanning.
 - run_netstat: flags (default "-tuln")
 - run_sqlmap: target, technique (default "B"), dbms, level (default "1"), risk (default "1"),
   cookie (the exact Cookie header value, e.g. "PHPSESSID=abc123; security=low" -- REQUIRED for
@@ -400,6 +417,43 @@ def detect_scoped_engagement(goal):
     if not ports:
         return None
     return target_match.group(0), ",".join(ports)
+
+
+# kali-network-model-bdu: SYSTEM_PROMPT's whole tool-selection framing
+# assumes exploitation is the goal the moment any chain is requested at all
+# -- there is no recon-only mode, so a freeform goal explicitly scoped to
+# enumeration only ("recon only", "don't exploit", ...) currently has no
+# reliable way to stay that way. Detecting this and routing to the
+# deterministic run_recon_only_engagement is the same "don't trust the model
+# to honor this itself" precedent detect_scoped_engagement already set for
+# an explicit port restriction -- doubly justified here, since the failure
+# direction (over-exploitation) is worse than an unrestricted port sweep.
+_RECON_ONLY_INTENT_RE = re.compile(
+    r"\b(recon[- ]only|enumerat\w*[- ]only|passive recon|"
+    r"(?:do(?:n'?t| not)|never|without)\s+(?:attempt\w*\s+)?exploit\w*|"
+    r"(?:do(?:n'?t| not)|never)\s+(?:attempt\w*\s+)?(?:brute[- ]?forc\w*|credential\w*)|"
+    r"identif\w*[- ]only|no exploitation|read[- ]only (?:scan|recon|assessment)|"
+    r"just enumerate|just recon)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_recon_only_engagement(goal):
+    """Returns (target, ports_or_None) if `goal` both names a target and
+    explicitly asks for recon/enumeration only, else None. See the module
+    note above _RECON_ONLY_INTENT_RE."""
+    if not _RECON_ONLY_INTENT_RE.search(goal):
+        return None
+    target_match = _TARGET_HOST_RE.search(goal)
+    if not target_match:
+        return None
+    ports = None
+    scope_match = _PORT_SCOPE_RE.search(goal)
+    if scope_match:
+        found_ports = re.findall(r'\d{1,5}', scope_match.group(1))
+        if found_ports:
+            ports = ",".join(found_ports)
+    return target_match.group(0), ports
 
 
 def execute_step(step):
@@ -892,6 +946,164 @@ def run_full_engagement(target, ports=None):
     return memory
 
 
+# --- Recon-only engagement --------------------------------------------------
+# kali-network-model-bdu. Tools never permitted in a recon-only engagement --
+# enumeration, identification, and lookups only, never credential brute
+# force or a landed exploit. run_metasploit is gated by CONTENT below
+# (search-only vs. use/run), not blocked outright, since "search cve:..." is
+# exactly the kind of identification a recon-only pass should still do.
+RECON_ONLY_BLOCKED_TOOLS = {
+    "run_hydra", "run_medusa", "run_ncrack", "run_john", "run_setoolkit",
+}
+# Best-effort, not a hard security boundary -- run_command is a raw shell
+# escape hatch, and a sufficiently determined chain could still route an
+# exploit through it in a form this regex doesn't recognize. This targets
+# the actual observed failure mode (the model reaching for a familiar
+# exploit tool/flag by habit, not adversarial evasion of this check).
+_RECON_UNSAFE_COMMAND_RE = re.compile(
+    r"\b(hydra|medusa|ncrack|msfconsole|setoolkit)\b|"
+    r"sqlmap\b.{0,120}(--dump|--os-shell|--os-cmd|--os-pwn)",
+    re.IGNORECASE,
+)
+
+
+def _is_recon_safe_step(step):
+    """True if `step` is safe to execute in a recon-only engagement. Gates
+    tool EXECUTION, not just prompting -- the same "verify deterministically,
+    don't just trust the model" precedent _detect_exploit_success and the
+    recon-escalation family already set, applied here to the opposite
+    direction (blocking an over-escalation instead of missing an
+    under-escalation)."""
+    tool = step.get("tool")
+    if tool in RECON_ONLY_BLOCKED_TOOLS:
+        return False
+    if tool == "run_metasploit":
+        return _is_search_only_metasploit(step.get("commands", ""))
+    if tool == "run_command":
+        return not _RECON_UNSAFE_COMMAND_RE.search(step.get("command", ""))
+    return True
+
+
+RECON_ONLY_GOAL_SUFFIX = (
+    "\n\nSCOPE: recon_only. Enumerate and IDENTIFY services, vulnerabilities, "
+    "and exposed content only. Do NOT attempt credential brute force, SQL "
+    "injection exploitation, RCE, or run/exploit a Metasploit module -- "
+    "'search' lookups are fine, 'use'/'run'/'exploit' are not. If you find "
+    "something exploitable (a CVE, a leaked credential, an injectable "
+    "parameter), name it in your findings and STOP -- do not act on it. "
+    'When there is nothing further to enumerate, respond with an empty '
+    'chain: {"chain": []}.'
+)
+
+
+def _run_recon_only_chain(chain, port, memory, cache):
+    """Execute one model-planned chain in recon-only mode: every step is
+    checked with _is_recon_safe_step BEFORE execution, never after -- an
+    out-of-scope step is logged and skipped, never run. There is no
+    success/breach concept here, only findings. Returns (round_log_lines,
+    step_outputs) in the same shape _run_chain_against_port uses (minus
+    `success`), so the deterministic recon-escalation family can still be
+    reused unchanged."""
+    round_log_lines = []
+    step_outputs = []
+    for step in chain:
+        tool = step.get("tool")
+        if not _is_recon_safe_step(step):
+            log.warning(f"[ATTACK] 🚫 Blocked out-of-scope step in recon-only mode: {tool}")
+            round_log_lines.append(
+                f"  [{tool}] BLOCKED (out of scope for a recon-only engagement -- exploitation tools are not permitted)"
+            )
+            continue
+        if cache and not cache.should_attempt(step):
+            round_log_lines.append(f"  [{tool}] SKIPPED (permanently blocked by an earlier identical failure)")
+            continue
+        output, ok = execute_step(step)
+        if ok and output:
+            step_outputs.append((tool, output))
+            memory.add_finding(port, tool, output)
+        elif not ok and cache:
+            cache.record_failure(step, reason=f"tool={tool} port={port} output_empty={not bool(output)}")
+        round_log_lines.append(
+            f"  [{tool}] {'ran' if ok else 'FAILED'}: {compress_tool_output(output, max_lines=8) if output else '(no output)'}"
+        )
+    return round_log_lines, step_outputs
+
+
+def run_recon_only_loop(target, memory, cache=None):
+    """Recon/identification-only counterpart to run_attack_loop -- never
+    escalates into exploitation even when a real lead is found, enforced
+    deterministically (_is_recon_safe_step) rather than by trusting the
+    model to respect RECON_ONLY_GOAL_SUFFIX alone."""
+    log.info(f"[ATTACK] Starting RECON-ONLY loop on {target}")
+    while memory.has_untried_ports():
+        port = memory.next_untried_port()
+        log.info(f"[ATTACK] 🔍 Enumerating port {port} (recon-only)")
+        base_goal = (
+            f"Target: {target} Port: {port}. Identify services, vulnerabilities, "
+            f"and exposed content on this port." + RECON_ONLY_GOAL_SUFFIX
+        )
+        base_url = f"http://{target}" if str(port) == "80" else f"http://{target}:{port}"
+        history = []
+        if str(port) in _COMMON_WEB_PORTS:
+            # Pre-flight is read-only GET requests -- safe to reuse unchanged.
+            _, preflight_log_lines = _run_deterministic_preflight(base_url, port, memory, cache)
+            if preflight_log_lines:
+                history.append("Pre-flight:\n" + "\n".join(preflight_log_lines))
+        seen_chain_signatures = set()
+        round_num = 1
+        while round_num <= MAX_ATTACK_ROUNDS:
+            if round_num == 1:
+                goal = base_goal
+            else:
+                recent_history = "\n".join(history[-2:])
+                goal = (
+                    f"{base_goal}\n\nYou have already enumerated {round_num - 1} round(s) "
+                    f"on this port:\n{recent_history}\n\nContinue identifying anything not "
+                    f"yet covered, or if you have nothing further to enumerate, respond "
+                    f'with an empty chain: {{"chain": []}}.'
+                )
+            log.info(f"[ATTACK] Port {port} recon round {round_num}/{MAX_ATTACK_ROUNDS}")
+            data = call_model(goal)
+            chain = data.get("chain", [])
+            if not chain:
+                log.info(f"[ATTACK] Port {port} recon round {round_num}: model has nothing further to enumerate")
+                break
+            signature = tuple(sorted((s.get("tool"), s.get("target") or s.get("url") or "") for s in chain))
+            if signature in seen_chain_signatures:
+                log.warning(f"[ATTACK] Port {port} recon round {round_num}: repeated chain, stopping")
+                break
+            seen_chain_signatures.add(signature)
+
+            round_log_lines, step_outputs = _run_recon_only_chain(chain, port, memory, cache)
+            if step_outputs:
+                _, esc_log_lines = _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs)
+                if esc_log_lines:
+                    round_log_lines += esc_log_lines
+
+            history.append(f"Round {round_num}:\n" + "\n".join(round_log_lines))
+            round_num += 1
+
+        if round_num > MAX_ATTACK_ROUNDS:
+            log.info(f"[ATTACK] Port {port}: hit MAX_ATTACK_ROUNDS ({MAX_ATTACK_ROUNDS}) for recon -- moving on")
+        if port not in memory.tried_ports:
+            memory.tried_ports.append(port)
+        log.info(f"[ATTACK] Port {port}: recon-only pass complete")
+    log.info("[ATTACK] Recon-only loop complete")
+    log.info(f"[MEMORY] Final summary: {memory.summary()}")
+
+
+def run_recon_only_engagement(target, ports=None):
+    memory = AgentMemory()
+    cache = NegativeCache()
+    log.info(f"[ENGAGE] 🔍 Recon-only engagement started on {target}")
+    run_recon(target, memory, ports=ports)
+    if memory.open_ports:
+        run_recon_only_loop(target, memory, cache)
+    else:
+        log.warning("[FAIL] 😤💀 No open ports found — aborting engagement")
+    return memory
+
+
 _ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
 
 
@@ -993,11 +1205,13 @@ def main():
     print("=" * 60)
     print("Commands:")
     print("  engage <target> [ports]  - full recon + attack loop")
-    print("                             ports: optional comma-separated list")
-    print("                             (e.g. 21,53,80,81,82,2222,3306) to")
-    print("                             restrict recon instead of a full")
-    print("                             1-65535 sweep")
-    print("  <any goal>               - single model query")
+    print("  recon <target> [ports]   - recon/identification ONLY, never exploits")
+    print("                             ports (both commands): optional comma-")
+    print("                             separated list (e.g. 21,53,80,81,82,2222,3306)")
+    print("                             to restrict recon instead of a full 1-65535 sweep")
+    print("  <any goal>               - single model query (explicit recon-only or")
+    print("                             port-scope phrasing is auto-detected and")
+    print("                             routed deterministically, see CLAUDE.md)")
     print("  exit                     - quit")
     print(f"  📝 Session log: {log_file}")
     print("=" * 60)
@@ -1017,7 +1231,25 @@ def main():
                 ports = parts[1] if len(parts) > 1 else None
                 run_full_engagement(target, ports=ports)
                 log.info("[REPORT] 📝 Engagement complete — generating report")
+            elif goal.startswith("recon "):
+                parts = goal.replace("recon ", "").strip().split()
+                target = parts[0]
+                ports = parts[1] if len(parts) > 1 else None
+                run_recon_only_engagement(target, ports=ports)
+                log.info("[REPORT] 📝 Recon-only engagement complete — generating report")
             else:
+                recon_scoped = detect_recon_only_engagement(goal)
+                if recon_scoped:
+                    target, ports = recon_scoped
+                    log.info(
+                        f"[GOAL] 🔍 Detected explicit recon-only phrasing in freeform "
+                        f"goal — routing to deterministic recon-only engagement instead "
+                        f"of trusting the model to stay in scope (target={target}, "
+                        f"ports={ports})"
+                    )
+                    run_recon_only_engagement(target, ports=ports)
+                    log.info("[REPORT] 📝 Recon-only engagement complete — generating report")
+                    continue
                 scoped = detect_scoped_engagement(goal)
                 if scoped:
                     target, ports = scoped

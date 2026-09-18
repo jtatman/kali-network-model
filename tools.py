@@ -24,7 +24,7 @@ from config import CONFIG
 _MASSCAN_TARGET_PORT_LEAK_RE = re.compile(r'^(?P<host>.+)/(?P<suffix>\d+-\d+|\d+)$')
 
 SUPPORTED_TOOLS = [
-    "run_command", "run_masscan", "run_nmap", "run_netstat",
+    "run_command", "run_masscan", "run_nmap", "run_naabu", "run_netstat",
     "run_sqlmap", "run_nikto", "run_hydra", "run_searchsploit",
     "run_curl", "run_wget", "write_file", "read_file",
     "run_john", "run_ncrack", "run_gobuster", "run_enum4linux", "run_medusa", "run_setoolkit",
@@ -44,6 +44,11 @@ class ToolExecutor:
             )
         elif tool == "run_nmap":
             return self._run_nmap(params.get("target", ""), params.get("flags", "-sV"))
+        elif tool == "run_naabu":
+            return self._run_naabu(
+                params.get("host", ""), params.get("ports", ""), params.get("top_ports", ""),
+                params.get("rate", ""),
+            )
         elif tool == "run_netstat":
             return self._run_netstat(params.get("flags", "-tuln"))
         elif tool == "run_sqlmap":
@@ -146,6 +151,26 @@ class ToolExecutor:
         if not target:
             return {"status": "error", "error_type": "invalid_params", "message": "No target specified for nmap"}
         command = f"nmap {flags} {target}"
+        return self._execute_command(command)
+
+    def _run_naabu(self, host, ports, top_ports, rate):
+        if not host:
+            return {"status": "error", "error_type": "invalid_params", "message": "No host specified for naabu"}
+        # Unlike nmap/masscan/hydra, naabu has NO positional target argument
+        # at all -- confirmed live: a bare "naabu <host>" hard-fails instantly
+        # with "[FTL] Program exiting: no input list provided". -host (or
+        # -list) is mandatory. -silent gives bare "host:port" output lines,
+        # one per line -- deliberately the exact input shape run_nuclei's
+        # target list (or nuclei's own stdin ingestion via run_command) wants,
+        # which is naabu's actual value: it's a pipe-friendly port-discovery
+        # stage, not a general-purpose replacement for nmap/masscan.
+        command = f"naabu -host {shlex.quote(host)} -silent"
+        if ports:
+            command += f" -p {shlex.quote(ports)}"
+        elif top_ports:
+            command += f" -top-ports {shlex.quote(top_ports)}"
+        if rate:
+            command += f" -rate {rate}"
         return self._execute_command(command)
 
     def _run_netstat(self, flags):
