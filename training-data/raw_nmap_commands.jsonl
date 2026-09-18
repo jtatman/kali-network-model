@@ -1,0 +1,1133 @@
+{"input":"Quick scan of common ports on target.com","output":"nmap -F target.com"}
+{"input":"Perform a quick port scan on target.com","output":"nmap -F target.com"}
+{"input":"Detects active hosts on the 192.168.1.0\/24 network","output":"nmap -sn 192.168.1.0\/24"}
+{"input":"Scan ports 80 and 443 on example.com","output":"nmap -p 80,443 example.com"}
+{"input":"Perform a SYN scan on server.local","output":"sudo nmap -sS server.local"}
+{"input":"Perform a SYN scan on server.local","output":"sudo nmap -sS server.local"}
+{"input":"Detects versions of services on target.com","output":"nmap -sV target.com"}
+{"input":"Identify the operating system of 192.168.1.1","output":"sudo nmap -O 192.168.1.1"}
+{"input":"Example.com UDP scan on ports 53 and 161.","output":"sudo nmap -sU -p 53,161 example.com"}
+{"input":"Scan all TCP ports on target.com","output":"nmap -p- target.com"}
+{"input":"Ping sweep on the 10.0.0.0\/24 subnet","output":"nmap -sn 10.0.0.0\/24"}
+{"input":"Aggressive scan of server.local","output":"sudo nmap -A server.local"}
+{"input":"Identifies vulnerabilities in target.com using scripts","output":"nmap --script=vuln target.com"}
+{"input":"Scan port 22 on 192.168.1.1 with version detection","output":"nmap -sV -p 22 192.168.1.1"}
+{"input":"Save the example.com scan in XML format.","output":"nmap -oX result.xml example.com"}
+{"input":"Silent scanning of the 100 most common ports on target.com","output":"nmap -T2 --top-ports 100 target.com"}
+{"input":"Detects active hosts without scanning ports in the 10.0.0.0\/24 range.","output":"nmap -sn 10.0.0.0\/24"}
+{"input":"Scan ports 1 to 1000 on the server.local quickly","output":"nmap -p 1-1000 -T4 server.local"}
+{"input":"ACK scan on target.com to detect firewalls","output":"sudo nmap -sA target.com"}
+{"input":"List HTTP services on example.com","output":"nmap --script=http-enum example.com"}
+{"input":"Complete scan with detection of operating systems and versions at 192.168.1.1","output":"sudo nmap -A 192.168.1.1"}
+{"input":"Discover live hosts in the 172.16.0.0\/16 range","output":"nmap -sn 172.16.0.0\/16"}
+{"input":"Scan common web ports in target.com","output":"nmap -p 80,443,8080,8443 target.com"}
+{"input":"Detects SSL services on example.com","output":"nmap --script=ssl-enum-ciphers example.com"}
+{"input":"FIN scan to bypass firewall on server.local","output":"sudo nmap -sF server.local"}
+{"input":"Export scan from target.com in all formats","output":"nmap -oA result target.com"}
+{"input":"Scan UDP on port 161 of 192.168.1.1","output":"sudo nmap -sU -p 161 192.168.1.1"}
+{"input":"Detects versions and saves in a standard format.","output":"nmap -sV -oN resultado.txt target.com"}
+{"input":"NULL scan in example.com","output":"sudo nmap -sN example.com"}
+{"input":"Identify services on the 1000 main server.local ports.","output":"nmap -sV --top-ports 1000 server.local"}
+{"input":"Scan ports 20 to 25 on target.com","output":"nmap -p 20-25 target.com"}
+{"input":"Detects hosts with TCP ping in the 10.0.0.0\/24 network.","output":"nmap -PS 10.0.0.0\/24"}
+{"input":"Packet fragmentation scan on example.com","output":"sudo nmap -f example.com"}
+{"input":"Search for SMB vulnerabilities at 192.168.1.1","output":"nmap --script=smb-vuln* 192.168.1.1"}
+{"input":"Scan all common UDP ports on server.local.","output":"sudo nmap -sU --top-ports 20 server.local"}
+{"input":"Detects operating system with permission on target.com","output":"sudo nmap -O target.com"}
+{"input":"What is the operating system on target.com?","output":"sudo nmap -O target.com"}
+{"input":"Scan for Christmas on example.com for tax evasion","output":"sudo nmap -sX example.com"}
+{"input":"Save results in a grepable format: 10.0.0.1","output":"nmap -oG resultado.gnmap 10.0.0.1"}
+{"input":"Scan port 3306 with version detection on server.local","output":"nmap -sV -p 3306 server.local"}
+{"input":"Discovery of a network at 192.168.0.0\/24 without port scanning","output":"nmap -sn 192.168.0.0\/24"}
+{"input":"Intensive scanning of target.com using NSE scripts.","output":"nmap -sC target.com"}
+{"input":"Detects DNS services on example.com","output":"nmap --script=dns-brute example.com"}
+{"input":"Use decoy scanning to evade detection at 192.168.1.1","output":"sudo nmap -D RND:10 192.168.1.1"}
+{"input":"Identify services running on port 445 of server.local","output":"nmap -sV -p 445 server.local"}
+{"input":"Scanning of privileged ports on target.com","output":"nmap -p 1-1023 target.com"}
+{"input":"Detects hosts with UDP ping on 10.0.0.0\/24","output":"sudo nmap -PU 10.0.0.0\/24"}
+{"input":"Quickly scan the 500 main ports on example.com.","output":"nmap -T5 --top-ports 500 example.com"}
+{"input":"List SMB users on 192.168.1.1","output":"nmap --script=smb-enum-users 192.168.1.1"}
+{"input":"Complete scan of all ports on server.local","output":"nmap -p 1-65535 server.local"}
+{"input":"Scan all TCP ports on server.local","output":"nmap -p- server.local"}
+{"input":"Detects versions with paranoid timing on target.com","output":"nmap -sV -T0 target.com"}
+{"input":"Scanning FTP and SSH ports on example.com","output":"nmap -p 21,22 example.com"}
+{"input":"Identify HTTP technologies used on target.com","output":"nmap --script=http-headers target.com"}
+{"input":"Scan originating from specific port 53 on 192.168.1.1","output":"sudo nmap -g 53 192.168.1.1"}
+{"input":"Detects SSL certificates on example.com","output":"nmap --script=ssl-cert example.com"}
+{"input":"Scan and export results to XML from server.local","output":"nmap -oX result.xml server.local"}
+{"input":"Discover web services at target.com","output":"nmap --script=http-enum target.com"}
+{"input":"Scan Window on 10.0.0.1","output":"sudo nmap -sW 10.0.0.1"}
+{"input":"Detects active hosts with ARP on 192.168.1.0\/24","output":"sudo nmap -PR 192.168.1.0\/24"}
+{"input":"Scan port 3389 for RDP on example.com","output":"nmap -p 3389 example.com"}
+{"input":"Identify databases on server.local","output":"nmap -p 3306,5432,1433,1521 server.local"}
+{"input":"Scan with a custom MTU of 24 on target.com","output":"sudo nmap --mtu 24 target.com"}
+{"input":"Identifies vulnerabilities in web services at 192.168.1.1","output":"nmap --script=http-vuln* 192.168.1.1"}
+{"input":"Scan with a delay of 1 second between packages on example.com","output":"nmap --scan-delay 1s example.com"}
+{"input":"List websites in target.com","output":"nmap --script=http-enum target.com"}
+{"input":"IP protocol scan on server.local","output":"sudo nmap -sO server.local"}
+{"input":"Detects email services on example.com","output":"nmap -p 25,110,143,465,587,993,995 example.com"}
+{"input":"Scan from the hosts file in inventory.txt","output":"nmap -iL inventory.txt"}
+{"input":"Identify default scripts on target.com","output":"nmap -sC target.com"}
+{"input":"Run a scan with default scripts on target.com","output":"nmap -sC target.com"}
+{"input":"Quick scan with service detection at 192.168.1.1","output":"nmap -sV -T4 192.168.1.1"}
+{"input":"Detects backdoors on server.local","output":"nmap --script=backdoor-check servidor.local"}
+{"input":"Scan port 8080 with version example.com","output":"nmap -sV -p 8080 example.com"}
+{"input":"Identify SNMP services on 10.0.0.1","output":"sudo nmap -sU -p 161,162 10.0.0.1"}
+{"input":"Scan with traceroute included in target.com","output":"nmap --traceroute target.com"}
+{"input":"Detects weak authentication on example.com","output":"nmap --script=auth example.com"}
+{"input":"Scan, excluding the host 192.168.1.5 from the network 192.168.1.0\/24","output":"nmap --excluding 192.168.1.5 192.168.1.0\/24"}
+{"input":"Identify MySQL services on server.local","output":"nmap -sV -p 3306 server.local"}
+{"input":"Broadcast scanning for discovery on the local network","output":"nmap --script=broadcast-discover"}
+{"input":"Detects operating systems without a connection on target.com.","output":"sudo nmap -O -Pn target.com"}
+{"input":"Scan ports greater than 10000 on example.com","output":"nmap -p 10001-65535 example.com"}
+{"input":"Identify virtual IPs at 192.168.1.1","output":"nmap --script=ip-forwarding 192.168.1.1"}
+{"input":"Common TCP port scans on server.local","output":"nmap --top-ports 20 server.local"}
+{"input":"Detects Telnet services on target.com","output":"nmap -p 23 target.com"}
+{"input":"Scan with high version intensity in example.com","output":"nmap -sV --version-intensity 9 example.com"}
+{"input":"Identify banner information on 10.0.0.1","output":"nmap -sV 10.0.0.1"}
+{"input":"Idle scan using zombie 192.168.1.2 on target.com","output":"sudo nmap -sI 192.168.1.2 target.com"}
+{"input":"Detects hosts while ignoring discovery on server.local","output":"nmap -Pn server.local"}
+{"input":"Scan with random data on example.com","output":"nmap --data-length 50 example.com"}
+{"input":"Identify open ports filtered on target.com","output":"nmap target.com"}
+{"input":"Scan with Reason to view status reasons at 192.168.1.1","output":"nmap --reason 192.168.1.1"}
+{"input":"Detects NFS services on server.local","output":"nmap -p 2049 server.local"}
+{"input":"Scan with a custom port list: 80, 443, 8080 on example.com","output":"nmap -p 80,443,8080 example.com"}
+{"input":"Identify malware on target.com","output":"nmap --script=malware target.com"}
+{"input":"High verbosity scan on server.local","output":"nmap -vv server.local"}
+{"input":"Detects insecure configurations on example.com","output":"nmap --script=default example.com"}
+{"input":"Scan specific host without a resolved DNS entry at 10.0.0.1","output":"nmap -n 10.0.0.1"}
+{"input":"Identify VNC services at 192.168.1.1","output":"nmap -p 5900 192.168.1.1"}
+{"input":"Scanning random ports on target.com","output":"nmap -r target.com"}
+{"input":"Detects proxy services on server.local","output":"nmap -p 3128,8080,8888 server.local"}
+{"input":"Scan with custom TTL of 64 in example.com","output":"sudo nmap --ttl 64 example.com"}
+{"input":"Identify LDAP services on target.com","output":"nmap -p 389,636 target.com"}
+{"input":"Scan without prior ping on 192.168.1.1","output":"nmap -Pn 192.168.1.1"}
+{"input":"Detects printing services on server.local","output":"nmap -p 515,631,9100 server.local"}
+{"input":"Scan with packet trace for debugging on example.com","output":"nmap --packet-trace example.com"}
+{"input":"Identify Redis services on target.com","output":"nmap -p 6379 target.com"}
+{"input":"MAC spoofing scan on 10.0.0.1","output":"sudo nmap --spoof-mac 0 10.0.0.1"}
+{"input":"Detects MongoDB services on server.local","output":"nmap -p 27017 server.local"}
+{"input":"Scan common application ports in example.com","output":"nmap -p 80,443,8080,8443,3000,5000 example.com"}
+{"input":"Identify Elasticsearch services on target.com","output":"nmap -p 9200,9300 target.com"}
+{"input":"Reverse DNS resolution scan on 192.168.1.0\/24","output":"nmap -R 192.168.1.0\/24"}
+{"input":"Detects Docker services on server.local","output":"nmap -p 2375,2376 server.local"}
+{"input":"Scan using the specific network interface eth0 on example.com","output":"nmap -e eth0 example.com"}
+{"input":"Identify Kubernetes services on target.com","output":"nmap -p 6443,8080,10250 target.com"}
+{"input":"Scan with discovery scripts on 10.0.0.1","output":"nmap --script=discovery 10.0.0.1"}
+{"input":"Detects RabbitMQ services on server.local","output":"nmap -p 5672,15672 server.local"}
+{"input":"Scan and save only active hosts in example.com","output":"nmap --open -oN result.txt example.com"}
+{"input":"Identify Kafka services on target.com","output":"nmap -p 9092,9093 target.com"}
+{"input":"Scan with a maximum of 2 retries at 192.168.1.1","output":"nmap --max-retries 2 192.168.1.1"}
+{"input":"Detects Memcached services on server.local","output":"nmap -p 11211 server.local"}
+{"input":"Scan with 10-in-10 host parallelism, using the 1.0.0.0\/24 network.","output":"nmap --min-hostgroup 10 10.0.0.0\/24"}
+{"input":"Identify Cassandra services on example.com","output":"nmap -p 7000,9042 example.com"}
+{"input":"Light version scan on target.com","output":"nmap -sV --version-light target.com"}
+{"input":"Detects Zookeeper services on server.local","output":"nmap -p 2181 server.local"}
+{"input":"Scan with a maximum package ratio of 100 on 192.168.1.1","output":"nmap --max-rate 100 192.168.1.1"}
+{"input":"Identify consular services on example.com","output":"nmap -p 8300,8500 example.com"}
+{"input":"FIN SYN scan on target.com","output":"sudo nmap -sF -sS target.com"}
+{"input":"Detects etcd services on server.local","output":"nmap -p 2379,2380 server.local"}
+{"input":"Scan omitting ports 80 and 443 on 10.0.0.1","output":"nmap --excluding ports 80, 443 10.0.0.1"}
+{"input":"Identify Prometheus services on example.com","output":"nmap -p 9090 example.com"}
+{"input":"Scan with a maximum host time of 10 minutes on target.com","output":"nmap --host-timeout 10m target.com"}
+{"input":"Detects Grafana services on server.local","output":"nmap -p 3000 server.local"}
+{"input":"Scan with insane speed at 192.168.1.1","output":"nmap -T5 192.168.1.1"}
+{"input":"Scan at maximum speed using 192.168.1.1","output":"nmap -T5 192.168.1.1"}
+{"input":"Identify Jenkins services on example.com","output":"nmap -p 8080 example.com"}
+{"input":"Scanning with custom hexadecimal data in target.com","output":"nmap --data 0xdeadbeef target.com"}
+{"input":"Detects GitLab services on server.local","output":"nmap -p 80,443,22 server.local"}
+{"input":"Scan with spoofed source IP address 10.0.0.5 on 192.168.1.1","output":"sudo nmap -S 10.0.0.5 192.168.1.1"}
+{"input":"Identify Splunk services on example.com","output":"nmap -p 8000,8089 example.com"}
+{"input":"Scanning with brute force scripts on target.com","output":"nmap --script=brute target.com"}
+{"input":"Detects Nagios services on server.local","output":"nmap -p 5666,5667 server.local"}
+{"input":"Scan with a minimum rate of 10 packages per second on 10.0.0.1","output":"nmap --min-rate 10 10.0.0.1"}
+{"input":"Identify Ansible services on example.com","output":"nmap -p 22 example.com"}
+{"input":"Scan with open source only and output XML to target.com","output":"nmap --open -oX result.xml target.com"}
+{"input":"Detects Terraform services on server.local","output":"nmap -p 8200 server.local"}
+{"input":"Scan cloud service ports at 192.168.1.1","output":"nmap -p 443,8080,9000 192.168.1.1"}
+{"input":"Identify Harbor services on example.com","output":"nmap -p 80,443 example.com"}
+{"input":"Scanning with BadSum to evade IDS on target.com","output":"sudo nmap --badsum target.com"}
+{"input":"Detects Nexus services on server.local","output":"nmap -p 8081 server.local"}
+{"input":"Scan with safe exploitation scripts on 10.0.0.1","output":"nmap --script=safe 10.0.0.1"}
+{"input":"Identify Artifactory services on example.com","output":"nmap -p 8081,8082 example.com"}
+{"input":"Scanning with IP options for routing on target.com","output":"sudo nmap --ip-options L 192.168.1.1 target.com"}
+{"input":"Detects SonarQube services on server.local","output":"nmap -p 9000 server.local"}
+{"input":"Scan with authorized intrusive scripts at 192.168.1.1","output":"nmap --script=intrusive 192.168.1.1"}
+{"input":"Identify Minio services on example.com","output":"nmap -p 9000 example.com"}
+{"input":"Scanning while saving statistics in XML format on target.com","output":"nmap --stats-every 10s -oX resultado.xml target.com"}
+{"input":"Detects Vault services on server.local","output":"nmap -p 8200 server.local"}
+{"input":"Scan with 10.0.0.0\/24 resolution systems","output":"nmap --system-dns 10.0.0.0\/24"}
+{"input":"Identify Keycloak services on example.com","output":"nmap -p 8080,8443 example.com"}
+{"input":"Scanning with secure external scripts on target.com","output":"nmap --script=external target.com"}
+{"input":"Detects Rancher services on server.local","output":"nmap -p 80,443,8080 server.local"}
+{"input":"Scan with custom DNS servers 8.8.8.8 and 192.168.1.1","output":"nmap --dns-servers 8.8.8.8 192.168.1.1"}
+{"input":"Identify Portainer services on example.com","output":"nmap -p 9000 example.com"}
+{"input":"Parallel scanning of 50 simultaneous ports on target.com","output":"nmap --min-parallelism 50 target.com"}
+{"input":"Detects Traefik services on server.local","output":"nmap -p 80,443,8080 server.local"}
+{"input":"Scan with a 500ms RTT timeout on 10.0.0.1","output":"nmap --initial-rtt-timeout 500ms 10.0.0.1"}
+{"input":"Identify Nginx services on example.com","output":"nmap -sV -p 80,443 example.com"}
+{"input":"Scan with a maximum parallelism of 100 in target.com","output":"nmap --max-parallelism 100 target.com"}
+{"input":"Detects Apache services on server.local","output":"nmap -sV -p 80,443 server.local"}
+{"input":"Scan with version all in 192.168.1.1","output":"nmap -sV --version-all 192.168.1.1"}
+{"input":"Identify Tomcat services on example.com","output":"nmap -p 8080,8443 example.com"}
+{"input":"Scan without randomizing port order on target.com","output":"nmap -r target.com"}
+{"input":"Detects WebLogic services on server.local","output":"nmap -p 7001,7002 server.local"}
+{"input":"Scan with custom script arguments on 10.0.0.1","output":"nmap --script-args user=admin 10.0.0.1"}
+{"input":"Identify WildFly services on example.com","output":"nmap -p 8080,9990 example.com"}
+{"input":"Passive FTP port scanning on target.com","output":"nmap --script=ftp-anon -p 21 target.com"}
+{"input":"Detects JBoss services on server.local","output":"nmap -p 8080,8443 server.local"}
+{"input":"Scan with a maximum scan delay of 10ms at 192.168.1.1","output":"nmap --max-scan-delay 10ms 192.168.1.1"}
+{"input":"Identify GlassFish services on example.com","output":"nmap -p 4848,8080 example.com"}
+{"input":"Scan with defeat rst ratelimit on target.com","output":"nmap --defeat-rst-ratelimit target.com"}
+{"input":"Detects Jetty services on server.local","output":"nmap -p 8080 server.local"}
+{"input":"Scan with a host group of at least 50 on the 10.0.0.0\/24 network.","output":"nmap --min-hostgroup 50 10.0.0.0\/24"}
+{"input":"Identify IIS services on example.com","output":"nmap -sV -p 80,443 example.com"}
+{"input":"Scan with a script timeout of 60 seconds on target.com","output":"nmap --script-timeout 60s target.com"}
+{"input":"Detects Lighttpd services on the server.local.","output":"nmap -sV -p 80 server.local"}
+{"input":"Scan with the maximum host group of 100 on 192.168.1.0\/24","output":"nmap --max-hostgroup 100 192.168.1.0\/24"}
+{"input":"Identify Caddy services on example.com","output":"nmap -p 80,443 example.com"}
+{"input":"Scan with minimum RTT timeout of 100ms on target.com","output":"nmap --min-rtt-timeout 100ms target.com"}
+{"input":"Detects HAProxy services on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Scan with maximum RTT timeout of 1 second on 10.0.0.1","output":"nmap --max-rtt-timeout 1s 10.0.0.1"}
+{"input":"Identify Varnish services on example.com","output":"nmap -p 80,6081 example.com"}
+{"input":"Scanning for WAF detection on target.com","output":"nmap --script=http-waf-detect target.com"}
+{"input":"Detects Squid services on server.local","output":"nmap -p 3128 server.local"}
+{"input":"Scan with privileged on example.com","output":"sudo nmap --privileged example.com"}
+{"input":"Identify SMTP email services on target.com","output":"nmap -p 25,465,587 target.com"}
+{"input":"Privileged scan of 192.168.1.1","output":"nmap --unprivileged 192.168.1.1"}
+{"input":"Detects POP3 services on server.local","output":"nmap -p 110,995 server.local"}
+{"input":"Scan with SendEth on example.com","output":"sudo nmap --send-eth example.com"}
+{"input":"Identify IMAP services on target.com","output":"nmap -p 143,993 target.com"}
+{"input":"Scan with send ip on 10.0.0.1","output":"nmap --send-ip 10.0.0.1"}
+{"input":"Detects Exchange services on server.local","output":"nmap -p 25,80,443,587 server.local"}
+{"input":"Scan and save only open ports in result.example.com","output":"nmap --open -oN result.txt example.com"}
+{"input":"Identify Postfix services on target.com","output":"nmap -sV -p 25 target.com"}
+{"input":"Scan with resume from file 192.168.1.0\/24","output":"nmap --resume result.xml 192.168.1.0\/24"}
+{"input":"Detects Dovecot services on server.local","output":"nmap -p 110,143,993,995 server.local"}
+{"input":"Scan with a custom stylesheet on example.com","output":"nmap --stylesheet estilo.xsl -oX resultado.xml example.com"}
+{"input":"Identify Exim services on target.com","output":"nmap -sV -p 25 target.com"}
+{"input":"Scan with webXML output on 10.0.0.1","output":"nmap --webxml -oX resultado.xml 10.0.0.1"}
+{"input":"Detects Sendmail services on server.local","output":"nmap -sV -p 25 server.local"}
+{"input":"Scan without stylesheet in example.com's XML result.","output":"nmap --no-stylesheet -oX result.xml example.com"}
+{"input":"Identify Zimbra services on target.com","output":"nmap -p 25,80,110,143,443,465,587,993,995 target.com"}
+{"input":"Scan with custom Datadirect in 192.168.1.1","output":"nmap --datadir \/custom\/path 192.168.1.1"}
+{"input":"Detects Roundcube services on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Scan with custom servicedb at example.com","output":"nmap --servicedb \/custom\/services example.com"}
+{"input":"Identify SquirrelMail services on target.com","output":"nmap -p 80,443 target.com"}
+{"input":"Scan with custom VersionDB in 10.0.0.1","output":"nmap --versiondb \/custom\/versions 10.0.0.1"}
+{"input":"Detects Horde services on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Scan with append output in example.com","output":"nmap --append-output -oN result.txt example.com"}
+{"input":"Identify Active Directory services on target.com","output":"nmap -p 53,88,135,139,389,445,464,636 target.com"}
+{"input":"Scan with iflist to display interfaces at 192.168.1.1","output":"nmap --iflist 192.168.1.1"}
+{"input":"Detects domain controller on server.local","output":"nmap -p 53,88,389,445 server.local"}
+{"input":"Scan showing available network interfaces","output":"nmap -iflist"}
+{"input":"Identify Kerberos services on example.com","output":"nmap -p 88,464 example.com"}
+{"input":"Scan with log errors in target.com file.","output":"nmap --log-errors target.com"}
+{"input":"Detects NetBIOS services on 10.0.0.1","output":"nmap -p 137,138,139 10.0.0.1"}
+{"input":"Scan with version trace on server.local","output":"nmap -sV --version-trace server.local"}
+{"input":"Identify RPC services on example.com","output":"nmap -p 111,135 example.com"}
+{"input":"Scan with trace debug script on target.com","output":"nmap --script-trace target.com"}
+{"input":"Detects Samba services on 192.168.1.1","output":"nmap -p 139,445 192.168.1.1"}
+{"input":"Scan without SSL certificate verification on server.local","output":"nmap --script=ssl-cert server.local"}
+{"input":"Identify WinRM services on example.com","output":"nmap -p 5985,5986 example.com"}
+{"input":"Port scanning with resolution by name in target.com","output":"nmap -p http,https target.com"}
+{"input":"Detects RDP services on 10.0.0.1","output":"nmap -p 3389 10.0.0.1"}
+{"input":"Scan ports by name on a local server (http, https, ftp).","output":"nmap -p http,https,ftp server.local"}
+{"input":"Identify Terminal Services services on example.com","output":"nmap -p 3389 example.com"}
+{"input":"Scan with low intensity in target.com","output":"nmap -sV --version-intensity 2 target.com"}
+{"input":"Detects SMB version 2 services on 192.168.1.1","output":"nmap --script=smb2-capabilities 192.168.1.1"}
+{"input":"Scan common Windows ports on server.local","output":"nmap -p 135,139,445,3389 server.local"}
+{"input":"Identify PowerShell remote services on example.com","output":"nmap -p 5985,5986 example.com"}
+{"input":"Active Directory scanning with NSE scripts on target.com","output":"nmap --script=ldap-rootdse -p 389 target.com"}
+{"input":"Detects MSSQL services on 10.0.0.1","output":"nmap -p 1433 10.0.0.1"}
+{"input":"Scan Microsoft databases on server.local","output":"nmap -p 1433,1434 server.local"}
+{"input":"Identify Oracle services on example.com","output":"nmap -p 1521 example.com"}
+{"input":"PostgreSQL scan on target.com","output":"nmap -p 5432 target.com"}
+{"input":"Detects MariaDB services on 192.168.1.1","output":"nmap -p 3306 192.168.1.1"}
+{"input":"Scan common database services on server.local","output":"nmap -p 1433,1521,3306,5432 server.local"}
+{"input":"Identify CouchDB services on example.com","output":"nmap -p 5984 example.com"}
+{"input":"Scanning of NoSQL databases at target.com","output":"nmap -p 5984,6379,27017 target.com"}
+{"input":"Detects InfluxDB services on 10.0.0.1","output":"nmap -p 8086 10.0.0.1"}
+{"input":"Scan metrics services on server.local","output":"nmap -p 8086,9090 server.local"}
+{"input":"Identify TimescaleDB services on example.com","output":"nmap -p 5432 example.com"}
+{"input":"Scanning of VPN services on target.com","output":"nmap -p 500,1194,1723,4500 target.com"}
+{"input":"Detects OpenVPN services on 192.168.1.1","output":"nmap -p 1194 192.168.1.1"}
+{"input":"Scan IPsec VPN on server.local","output":"nmap -p 500,4500 server.local"}
+{"input":"Identify PPTP services on example.com","output":"nmap -p 1723 example.com"}
+{"input":"Scanning of VPN tunnels on target.com","output":"nmap -p 1194,1723 target.com"}
+{"input":"Detects WireGuard services on 10.0.0.1","output":"nmap -sU -p 51820 10.0.0.1"}
+{"input":"Scan VPN in UDP mode on server.local","output":"sudo nmap -sU -p 500,1194,4500 server.local"}
+{"input":"Identify SIP services on example.com","output":"nmap -p 5060,5061 example.com"}
+{"input":"Scanning for IP phones on target.com","output":"nmap -p 5060,5061 target.com"}
+{"input":"Detects Asterisk services on 192.168.1.1","output":"nmap -p 5060 192.168.1.1"}
+{"input":"Scan VoIP services on server.local","output":"nmap -p 5060,5061 server.local"}
+{"input":"Identify RTP services on example.com","output":"nmap -sU -p 10000-20000 example.com"}
+{"input":"Scanning of streaming media on target.com","output":"nmap -p 554,1935,8554 target.com"}
+{"input":"Detects RTSP services on 10.0.0.1","output":"nmap -p 554 10.0.0.1"}
+{"input":"Scan RTMP services on local server.","output":"nmap -p 1935 server.local"}
+{"input":"Identify video streaming services on example.com","output":"nmap -p 554,1935 example.com"}
+{"input":"Scanning IP cameras on target.com","output":"nmap -p 80,554,8080 target.com"}
+{"input":"Detects ONVIF services at 192.168.1.1","output":"nmap -p 80,8080 192.168.1.1"}
+{"input":"Scan IoT devices on server.local","output":"nmap -p 80,443,1883,8883 server.local"}
+{"input":"Identify MQTT services on example.com","output":"nmap -p 1883,8883 example.com"}
+{"input":"Scanning of IoT protocols on target.com","output":"nmap -p 1883,5683,8883 target.com"}
+{"input":"Detects CoAP services on 10.0.0.1","output":"sudo nmap -sU -p 5683 10.0.0.1"}
+{"input":"Scan smart home devices on 192.168.1.0\/24","output":"nmap -p 1883,8883 192.168.1.0\/24"}
+{"input":"Identify Modbus services on example.com","output":"nmap -p 502 example.com"}
+{"input":"SCADA scan on target.com","output":"nmap -p 102,502,2404 target.com"}
+{"input":"Detects industrial services on server.local","output":"nmap -p 102,502,2404,44818 server.local"}
+{"input":"Scan OT systems at 10.0.0.1","output":"nmap -p 102,502 10.0.0.1"}
+{"input":"Identify BACnet services on example.com","output":"sudo nmap -sU -p 47808 example.com"}
+{"input":"Scanning of automation for buildings on target.com","output":"sudo nmap -sU -p 47808 target.com"}
+{"input":"Detects printer services at 192.168.1.1","output":"nmap -p 515,631,9100 192.168.1.1"}
+{"input":"Scan network printers on server.local","output":"nmap -p 515,631,9100 server.local"}
+{"input":"Identify IPP services on example.com","output":"nmap -p 631 example.com"}
+{"input":"Scanning network devices on target.com","output":"nmap -p 23,80,161,443 target.com"}
+{"input":"Detects routers and switches in the 10.0.0.0\/24 network.","output":"nmap -p 23,80,161,443 10.0.0.0\/24"}
+{"input":"Scan with OS and service detection at example.com","output":"sudo nmap -A example.com"}
+{"input":"I need to perform an aggressive scan of example.com.","output":"sudo nmap -A example.com"}
+{"input":"Identify Wi-Fi access points in the 192.168.1.0\/24 range","output":"nmap -p 80,443 192.168.1.0\/24"}
+{"input":"Scanning of access points on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Detects backup services on example.com","output":"nmap -p 9091,9292,10000 example.com"}
+{"input":"Scan Bacula services on target.com","output":"nmap -p 9101,9102,9103 target.com"}
+{"input":"Identify rsync services on 10.0.0.1","output":"nmap -p 873 10.0.0.1"}
+{"input":"File synchronization scan on server.local","output":"nmap -p 873,22 server.local"}
+{"input":"Detects NAS services on 192.168.1.1","output":"nmap -p 21,80,139,443,445,873,2049 192.168.1.1"}
+{"input":"Scan network storage at example.com","output":"nmap -p 21,139,445,2049 example.com"}
+{"input":"Identify iSCSI services on target.com","output":"nmap -p 3260 target.com"}
+{"input":"Scan of SAN on server.local","output":"nmap -p 3260 server.local"}
+{"input":"Detects Fibre Channel services on 10.0.0.1","output":"nmap -p 3260,8300 10.0.0.1"}
+{"input":"Scan with ICMP ping on 192.168.1.0\/24","output":"nmap -PE 192.168.1.0\/24"}
+{"input":"Identify hosts with ping timestamp on example.com","output":"nmap -PP example.com"}
+{"input":"Scan with ping address mask on target.com","output":"nmap -PM target.com"}
+{"input":"Detects hosts with SCTP ping on server.local","output":"nmap -PY server.local"}
+{"input":"Scan without reverse DNS resolution on 10.0.0.1","output":"nmap -n 10.0.0.1"}
+{"input":"Identify services without performing a ping on example.com","output":"nmap -Pn example.com"}
+{"input":"Scanning, treating everyone as assets on target.com","output":"nmap -Pn target.com"}
+{"input":"Detects GameSpy services at 192.168.1.1","output":"sudo nmap -sU -p 7777,7778 192.168.1.1"}
+{"input":"Scan game servers on server.local","output":"sudo nmap -sU -p 7777,27015 server.local"}
+{"input":"Identify Steam services on example.com","output":"sudo nmap -sU -p 27015,27016 example.com"}
+{"input":"Scanning Minecraft servers on target.com","output":"nmap -p 25565 target.com"}
+{"input":"Detects gaming services on 10.0.0.1","output":"nmap -p 25565,27015 10.0.0.1"}
+{"input":"Scan chat services on server.local","output":"nmap -p 5222,5223,6667 server.local"}
+{"input":"Identify XMPP services on example.com","output":"nmap -p 5222,5223 example.com"}
+{"input":"Scanning for IRC on target.com","output":"nmap -p 6667 target.com"}
+{"input":"Detects on-premise Slack services at 192.168.1.1","output":"nmap -p 80,443 192.168.1.1"}
+{"input":"Scan Matrix services on server.local","output":"nmap -p 8008,8448 server.local"}
+{"input":"Identify Rocket Chat services on example.com","output":"nmap -p 3000 example.com"}
+{"input":"Mattermost scan on target.com","output":"nmap -p 8065 target.com"}
+{"input":"Detects Jitsi services on 10.0.0.1","output":"nmap -p 443,4443,10000 10.0.0.1"}
+{"input":"Scan video conference on server.local","output":"nmap -p 443,3478,5349 server.local"}
+{"input":"Identify BigBlueButton services on example.com","output":"nmap -p 80,443 example.com"}
+{"input":"Zoom on-premise scanning on target.com","output":"nmap -p 8801,8802 target.com"}
+{"input":"Detects WebRTC services on 192.168.1.1","output":"nmap -p 443,3478 192.168.1.1"}
+{"input":"Scan TURN STUN services on server.local","output":"sudo nmap -sU -p 3478,5349 server.local"}
+{"input":"Identify services offered by Coturn at example.com","output":"sudo nmap -sU -p 3478 example.com"}
+{"input":"CDN scan on target.com","output":"nmap -p 80,443 target.com"}
+{"input":"Detects caching services on 10.0.0.1","output":"nmap -p 6379,11211 10.0.0.1"}
+{"input":"Scan load balancers on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Identify F5 BigIP services on example.com","output":"nmap -p 80,443 example.com"}
+{"input":"API Gateway scan on target.com","output":"nmap -p 8080,8443 target.com"}
+{"input":"Detects Kong services on 192.168.1.1","output":"nmap -p 8000,8001,8443,8444 192.168.1.1"}
+{"input":"Scan API management on server.local","output":"nmap -p 8080,8443 server.local"}
+{"input":"Identify Apigee services on example.com","output":"nmap -p 8080,9001 example.com"}
+{"input":"Scanning of WSO2 on target.com","output":"nmap -p 9443,9763 target.com"}
+{"input":"Detects Tyk services on 10.0.0.1","output":"nmap -p 8080 10.0.0.1"}
+{"input":"Identify OpenID Connect services on example.com","output":"nmap -p 80,443 example.com"}
+{"input":"Scanning of federation services on target.com","output":"nmap -p 443 target.com"}
+{"input":"Detects ADFS services at 192.168.1.1","output":"nmap -p 443 192.168.1.1"}
+{"input":"Scan Shibboleth on server.local","output":"nmap -p 443 server.local"}
+{"input":"Identify Ping Identity services on example.com","output":"nmap -p 9031,9999 example.com"}
+{"input":"Access management scanning on target.com","output":"nmap -p 443,9031 target.com"}
+{"input":"Detects ForgeRock services on 10.0.0.1","output":"nmap -p 8080,8443 10.0.0.1"}
+{"input":"Scan for privileged access on server.local","output":"nmap -p 443,1858 server.local"}
+{"input":"Identify BeyondTrust services on example.com","output":"nmap -p 443 example.com"}
+{"input":"Scanning of PAM solutions on target.com","output":"nmap -p 443,1858 target.com"}
+{"input":"Detects Thycotic services on 192.168.1.1","output":"nmap -p 443 192.168.1.1"}
+{"input":"Scan bastion hosts on server.local","output":"nmap -p 22,3389 server.local"}
+{"input":"Identify jump server services on example.com","output":"nmap -p 22,3389 example.com"}
+{"input":"Remote access scan on target.com","output":"nmap -p 22,443,3389 target.com"}
+{"input":"Detects Guacamole services on 10.0.0.1","output":"nmap -p 8080 10.0.0.1"}
+{"input":"Scan Apache Guacamole on server.local","output":"nmap -p 8080 server.local"}
+{"input":"Identify VDI services on example.com","output":"nmap -p 443,3389 example.com"}
+{"input":"Citrix scan on target.com","output":"nmap -p 80,443,1494,2598 target.com"}
+{"input":"Detects VMware Horizon services on 192.168.1.1","output":"nmap -p 443,4172 192.168.1.1"}
+{"input":"Scan virtual desktops on server.local","output":"nmap -p 443,3389 server.local"}
+{"input":"Identify hypervisor services on example.com","output":"nmap -p 443,902 example.com"}
+{"input":"VMware ESXi scan on target.com","output":"nmap -p 443,902 target.com"}
+{"input":"Detects vCenter services on 10.0.0.1","output":"nmap -p 80,443,902 10.0.0.1"}
+{"input":"Scan Hyper-V management on server.local","output":"nmap -p 2179,5985,5986 server.local"}
+{"input":"Identify Proxmox services on example.com","output":"nmap -p 8006 example.com"}
+{"input":"KVM management scanning on target.com","output":"nmap -p 16509 target.com"}
+{"input":"Detects libvirt services on 192.168.1.1","output":"nmap -p 16509 192.168.1.1"}
+{"input":"Scan XenServer on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Identify oVirt services on example.com","output":"nmap -p 443 example.com"}
+{"input":"Cloud management scanning on target.com","output":"nmap -p 443,8080 target.com"}
+{"input":"Detects OpenStack services on 10.0.0.1","output":"nmap -p 5000,8004,8774,9292,9696 10.0.0.1"}
+{"input":"Scan CloudStack on server.local","output":"nmap -p 8080,8250 server.local"}
+{"input":"Identify Eucalyptus services on example.com","output":"nmap -p 8773,8777 example.com"}
+{"input":"Scanning of orchestration platforms on target.com","output":"nmap -p 443,8080 target.com"}
+{"input":"Detects Nomad services on 192.168.1.1","output":"nmap -p 4646,4647 192.168.1.1"}
+{"input":"Scan Mesos on server.local","output":"nmap -p 5050,5051 server.local"}
+{"input":"Identify Marathon services on example.com","output":"nmap -p 8080 example.com"}
+{"input":"Container orchestration scanning on target.com","output":"nmap -p 2375,2376,6443 target.com"}
+{"input":"Detects Docker Swarm services on 10.0.0.1","output":"nmap -p 2377 10.0.0.1"}
+{"input":"Scan the Kubernetes API on server.local","output":"nmap -p 6443 server.local"}
+{"input":"Identify etcd cluster services on example.com","output":"nmap -p 2379,2380 example.com"}
+{"input":"Scanning of the K8s control plane on target.com","output":"nmap -p 2379,2380,6443,10250,10251,10252 target.com"}
+{"input":"Detects kubelet services on 192.168.1.1","output":"nmap -p 10250 192.168.1.1"}
+{"input":"Scan kube-proxy on server.local","output":"nmap -p 10256 server.local"}
+{"input":"Identify CoreDNS services on example.com","output":"nmap -sU -p 53 example.com"}
+{"input":"Scanning of K8s network plugins on target.com","output":"nmap -p 9099,9153 target.com"}
+{"input":"Detects Calico services on 10.0.0.1","output":"nmap -p 179,9099 10.0.0.1"}
+{"input":"Scan Flannel on server.local","output":"sudo nmap -sU -p 8285,8472 server.local"}
+{"input":"Identify Weave Net services on example.com","output":"nmap -p 6783 example.com"}
+{"input":"Scanning for CNI plugins on target.com","output":"nmap -p 179,6783 target.com"}
+{"input":"Detects Cilium services on 192.168.1.1","output":"nmap -p 9090,9091 192.168.1.1"}
+{"input":"Scan storage orchestrators on server.local","output":"nmap -p 3260,8443 server.local"}
+{"input":"Identify Rook services on example.com","output":"nmap -p 8443 example.com"}
+{"input":"Scanning of a Ceph cluster on target.com","output":"nmap -p 3300,6789 target.com"}
+{"input":"Detects Ceph MON services on 10.0.0.1","output":"nmap -p 6789 10.0.0.1"}
+{"input":"Scan Ceph OSD on server.local","output":"nmap -p 6800-7300 server.local"}
+{"input":"Identify GlusterFS services on example.com","output":"nmap -p 24007,24008 example.com"}
+{"input":"Scanning of distributed storage on target.com","output":"nmap -p 2049,24007 target.com"}
+{"input":"Detects MinIO cluster services on 192.168.1.1","output":"nmap -p 9000 192.168.1.1"}
+{"input":"Scan object storage on server.local","output":"nmap -p 9000 server.local"}
+{"input":"Identify SeaweedFS services on example.com","output":"nmap -p 8080,9333 example.com"}
+{"input":"Scanning compatible S3 storage on target.com","output":"nmap -p 9000 target.com"}
+{"input":"Detects Longhorn services on 10.0.0.1","output":"nmap -p 9500 10.0.0.1"}
+{"input":"Scan persistent volume providers on server.local","output":"nmap -p 3260,9500 server.local"}
+{"input":"Identify OpenEBS services on example.com","output":"nmap -p 9500 example.com"}
+{"input":"Scanning CSI drivers on target.com","output":"nmap -p 9500 target.com"}
+{"input":"Detects Portworx services on 192.168.1.1","output":"nmap -p 9001,9010 192.168.1.1"}
+{"input":"Scan edge computing on server.local","output":"nmap -p 80,443,1883 server.local"}
+{"input":"Identify KubeEdge services on example.com","output":"nmap -p 10000,10002 example.com"}
+{"input":"K3s scan on target.com","output":"nmap -p 6443 target.com"}
+{"input":"Detects MicroK8s services on 10.0.0.1","output":"nmap -p 16443 10.0.0.1"}
+{"input":"Scan edge orchestration on server.local","output":"nmap -p 6443,10000 server.local"}
+{"input":"Identify OpenYurt services on example.com","output":"nmap -p 10261,10262 example.com"}
+{"input":"Scanning of fog computing nodes on target.com","output":"nmap -p 1883,8883 target.com"}
+{"input":"Detects edge gateway services on 192.168.1.1","output":"nmap -p 80,443,1883 192.168.1.1"}
+{"input":"Scan the 5G core network on server.local","output":"nmap -p 8080,29510 server.local"}
+{"input":"Identify Open5GS services on example.com","output":"nmap -p 3000,9999 example.com"}
+{"input":"Scanning SDN controllers on target.com","output":"nmap -p 6633,6653,8080,8181 target.com"}
+{"input":"Detects OpenDaylight services on 10.0.0.1","output":"nmap -p 8080,8181 10.0.0.1"}
+{"input":"Scan ONOS on server.local","output":"nmap -p 8101,8181 server.local"}
+{"input":"Identify Floodlight services on example.com","output":"nmap -p 6653,8080 example.com"}
+{"input":"NFV orchestration scanning on target.com","output":"nmap -p 8080,9999 target.com"}
+{"input":"Detects OpenStack Tacker services on 192.168.1.1","output":"nmap -p 9890 192.168.1.1"}
+{"input":"Scan VNF managers on server.local","output":"nmap -p 8080,9999 server.local"}
+{"input":"Identify ONAP services on example.com","output":"nmap -p 30200,30233 example.com"}
+{"input":"Scanning of telecommunications infrastructure on target.com","output":"nmap -p 8080,9999,29510 target.com"}
+{"input":"Detects blockchain node services on 10.0.0.1","output":"nmap -p 8545,30303 10.0.0.1"}
+{"input":"Scan the Ethereum node on server.local","output":"nmap -p 8545,30303 server.local"}
+{"input":"Identify Hyperledger services on example.com","output":"nmap -p 7050,7051 example.com"}
+{"input":"Scan of Fabric peer on target.com","output":"nmap -p 7051 target.com"}
+{"input":"Detects IPFS services on 192.168.1.1","output":"nmap -p 4001,5001,8080 192.168.1.1"}
+{"input":"Scan a distributed ledger on server.local","output":"nmap -p 7050,8545 server.local"}
+{"input":"Identify Bitcoin node services on example.com","output":"nmap -p 8332,8333 example.com"}
+{"input":"Scanning cryptocurrency nodes on target.com","output":"nmap -p 8332,8333,8545 target.com"}
+{"input":"Detects smart contract services on 10.0.0.1","output":"nmap -p 8545 10.0.0.1"}
+{"input":"Scan dedicated gaming servers on server.local","output":"nmap -p 25565,27015,7777 server.local"}
+{"input":"Identify services in Valheim at example.com","output":"sudo nmap -sU -p 2456,2457 example.com"}
+{"input":"Scanning of a Rust server on target.com","output":"nmap -p 28015 target.com"}
+{"input":"Detects ARK services on 192.168.1.1","output":"sudo nmap -sU -p 7777,7778 192.168.1.1"}
+{"input":"Scan the FiveM server on server.local","output":"sudo nmap -sU -p 30120 servidor.local"}
+{"input":"Identify satisfactory services on example.com","output":"sudo nmap -sU -p 7777 example.com"}
+{"input":"Scanning of the Terraria server on target.com","output":"nmap -p 7777 target.com"}
+{"input":"Detects Factorio services on 10.0.0.1","output":"sudo nmap -sU -p 34197 10.0.0.1"}
+{"input":"Stealth scan of target.com","output":"sudo nmap -sS target.com"}
+{"input":"Perform a ping scan on the 172.16.0.0\/24 network.","output":"nmap -sn 172.16.0.0\/24"}
+{"input":"I want to scan target.com discreetly.","output":"sudo nmap -sS target.com"}
+{"input":"Intensive version detection scan on example.com","output":"nmap -sV --version-intensity 9 example.com"}
+{"input":"Perform a NULL scan on server.local for evasion.","output":"sudo nmap -sN server.local"}
+{"input":"Find out which hosts are active in the 10.10.0.0\/16 network.","output":"nmap -sn 10.10.0.0\/16"}
+{"input":"Scan target.com and save in XML format.","output":"nmap -oX result.xml target.com"}
+{"input":"Detects the operating system of example.com with permission.","output":"sudo nmap -O example.com"}
+{"input":"Very slow scan to avoid detection on server.local","output":"nmap -T0 server.local"}
+{"input":"Search for web vulnerabilities on target.com","output":"nmap --script=http-vuln* target.com"}
+{"input":"Perform connectivity scanning without scanning ports in 192.168.50.0\/24","output":"nmap -sn 192.168.50.0\/24"}
+{"input":"ACK scan to map firewall rules in example.com","output":"sudo nmap -sA example.com"}
+{"input":"Detects malicious scripts on server.local","output":"nmap --script=malware server.local"}
+{"input":"FIN stealth scan on target.com","output":"sudo nmap -sF target.com"}
+{"input":"Identify all the hosts in the network 192.168.100.0\/24","output":"nmap -sn 192.168.100.0\/24"}
+{"input":"Xmas scan for bypassing firewalls in example.com","output":"sudo nmap -sX example.com"}
+{"input":"Export the result to all server.local formats.","output":"nmap -oA result.local"}
+{"input":"Scan, ignoring host discovery on target.com","output":"nmap -Pn target.com"}
+{"input":"Provide detailed information about the scan of example.com.","output":"nmap -v example.com"}
+{"input":"Scanning with default scripts on server.local","output":"nmap -sC server.local"}
+{"input":"Use packet fragmentation on target.com","output":"sudo nmap -f target.com"}
+{"input":"Scan without performing a DNS resolution on example.com","output":"nmap -n example.com"}
+{"input":"Perform a complete aggressive scan of server.local","output":"sudo nmap -A server.local"}
+{"input":"Scan at maximum speed on target.com","output":"nmap -T5 target.com"}
+{"input":"Detects services and versions on example.com","output":"nmap -sV example.com"}
+{"input":"Scan using decoys to hide origin on server.local","output":"sudo nmap -D RND:10 server.local"}
+{"input":"Save only the open ports of target.com.","output":"nmap --open -oN result.txt target.com"}
+{"input":"IP protocol scan on example.com","output":"sudo nmap -sO example.com"}
+{"input":"Execute brute-force scripts on server.local","output":"nmap --script=brute server.local"}
+{"input":"Scan with normal timing on target.com","output":"nmap -T3 target.com"}
+{"input":"Detects backdoors using NSE on example.com","output":"nmap --script=backdoor-check example.com"}
+{"input":"Window scan for firewall analysis on server.local","output":"sudo nmap -sW server.local"}
+{"input":"Includes traceroute in the scanning of target.com","output":"nmap --traceroute target.com"}
+{"input":"Scan from host file","output":"nmap -iL inventory.txt"}
+{"input":"Use discovery scripts on example.com","output":"nmap --script=discovery example.com"}
+{"input":"Idle scan using zombie on server.local","output":"sudo nmap -sI 192.168.1.5 servidor.local"}
+{"input":"Show reasons for port status on target.com","output":"nmap - target.com"}
+{"input":"Scan with maximum verbosity in example.com","output":"nmap -vv example.com"}
+{"input":"Use a custom MTU of 16 on the server.local.","output":"sudo nmap --mtu 16 server.local"}
+{"input":"Delayed scan between probes on target.com","output":"nmap --scan-delay 500ms target.com"}
+{"input":"Detects weak SSL configuration on example.com","output":"nmap --script=ssl-enum-ciphers example.com"}
+{"input":"Scan with origin from port 53 on server.local","output":"sudo nmap -g 53 server.local"}
+{"input":"List shared SMB resources on target.com","output":"nmap --script=smb-enum-shares target.com"}
+{"input":"Scan, excluding host 10.0.0.5","output":"nmap --excluding 10.0.0.5 10.0.0.0\/24"}
+{"input":"Use a TCP SYN ping on example.com","output":"nmap -PS example.com"}
+{"input":"Scan with random data on server.local","output":"nmap --data-length 100 server.local"}
+{"input":"Detects SSL certificates on target.com","output":"nmap --script=ssl-cert target.com"}
+{"input":"Scan with TTL of 128 on example.com","output":"sudo nmap --ttl 128 example.com"}
+{"input":"Use ICMP echo requests on server.local.","output":"nmap -PE server.local"}
+{"input":"Scan without randomizing ports on target.com","output":"nmap -r target.com"}
+{"input":"Detects SMB vulnerabilities in example.com","output":"nmap --script=smb-vuln* example.com"}
+{"input":"Scan with forced DNS resolution on server.local","output":"nmap -R server.local"}
+{"input":"Use the ICMP timestamp request on target.com","output":"nmap -PP target.com"}
+{"input":"Scan with a fake MAC address on example.com","output":"sudo nmap --spoof-mac 0 example.com"}
+{"input":"Detects banner information on server.local","output":"nmap -sV server.local"}
+{"input":"Scanning with BadSum for evasion on target.com","output":"sudo nmap --badsum target.com"}
+{"input":"Use external scripts in example.com","output":"nmap --script=external example.com"}
+{"input":"Scan with a false originating IP on the server.local","output":"sudo nmap -S 10.10.10.10 server.local"}
+{"input":"Detects WAF on target.com","output":"nmap --script=http-waf-detect target.com"}
+{"input":"Scan with eth1 interface on example.com","output":"nmap -e eth1 example.com"}
+{"input":"Use ICMP echo request on server.local","output":"nmap -PA server.local"}
+{"input":"Scan with rate limiting on target.com","output":"nmap --max-rate 50 target.com"}
+{"input":"Detects HTTP authentication on example.com","output":"nmap --script=http-auth ejemplo.com"}
+{"input":"Host scanning with a timeout on the local server.","output":"nmap --host-timeout 5m server.local"}
+{"input":"Use light version detection on target.com","output":"nmap -sV --version-light target.com"}
+{"input":"Scan and save in a format that can be used with `grep`","output":"nmap -oG resultado.gnmap example.com"}
+{"input":"Detects exploitation scripts on server.local","output":"nmap --script=exploit server.local"}
+{"input":"Scan with minimal parallelism on target.com","output":"nmap --min-parallelism 10 target.com"}
+{"input":"Use custom DNS servers on example.com","output":"nmap --dns-servers 8.8.8.8,1.1.1.1 example.com"}
+{"input":"Scan with packet trace on server.local","output":"nmap --packet-trace server.local"}
+{"input":"Detects hidden web directories on target.com","output":"nmap --script=http-enum target.com"}
+{"input":"Scan with maximum retries of 1 in example.com","output":"nmap --max-retries 1 example.com"}
+{"input":"Use ping SCTP on server.local","output":"nmap -PY server.local"}
+{"input":"Scan, treating all hosts as live targets on target.com","output":"nmap -Pn target.com"}
+{"input":"Detects HTTP technologies on example.com","output":"nmap --script=http-headers example.com"}
+{"input":"Scan with stealth timing on server.local","output":"nmap -T2 server.local"}
+{"input":"Use only secure scripts on target.com","output":"nmap --script=safe target.com"}
+{"input":"Scan with a minimum rate on example.com","output":"nmap --min-rate 5 example.com"}
+{"input":"Detects anonymous FTP users on server.local","output":"nmap --script=ftp-anon server.local"}
+{"input":"Scanning using ARP for discovery in the 192.168.1.0\/24 network","output":"sudo nmap -PR 192.168.1.0\/24"}
+{"input":"Use the all probes version in target.com","output":"nmap -sV --version-all target.com"}
+{"input":"Scan with active trace script on example.com","output":"nmap --script-trace example.com"}
+{"input":"Detects SQL injection on server.local","output":"nmap --script=http-sql-injection server.local"}
+{"input":"Scan with defeat rst ratelimit on target.com","output":"nmap --defeat-rst-ratelimit target.com"}
+{"input":"Use the maximum scan delay in example.com","output":"nmap --max-scan-delay 20ms example.com"}
+{"input":"Scan with version trace on server.local","output":"nmap -sV --version-trace server.local"}
+{"input":"Detects XSS in target.com","output":"nmap --script=http-stored-xss example.com"}
+{"input":"Scan with the maximum host group of 50 on the 10.0.0.0\/24 network.","output":"nmap --max-hostgroup 50 10.0.0.0\/24"}
+{"input":"Use the initial RTT timeout in example.com.","output":"nmap --initial-rtt-timeout 200ms example.com"}
+{"input":"Scan with a custom timeout script on server.local","output":"nmap --script-timeout 30s server.local"}
+{"input":"Detects CSRF on target.com","output":"nmap --script=http-csrf example.com"}
+{"input":"Scanning without an XML stylesheet in example.com","output":"nmap --no-stylesheet -oX result.xml example.com"}
+{"input":"Use the system DNS on server.local","output":"nmap --system-dns server.local"}
+{"input":"Scan showing statistics every 30 seconds on target.com","output":"nmap --stats-every 30s target.com"}
+{"input":"Detects WebDAV on example.com","output":"nmap --script=http-webdav-scan example.com"}
+{"input":"Scan with privileges on server.local","output":"sudo nmap --privileged server.local"}
+{"input":"Use the append output mode in target.com","output":"nmap --append-output -oN result.txt target.com"}
+{"input":"Scan with SendEth at example.com","output":"sudo nmap --send-eth example.com"}
+{"input":"Detects available HTTP methods on server.local","output":"nmap --script=http-methods server.local"}
+{"input":"Scan with specific IP address on target.com","output":"nmap --send-ip target.com"}
+{"input":"Use the WebXML output in example.com","output":"nmap --webxml -oX resultado.xml example.com"}
+{"input":"Scan and list SSH users on server.local","output":"nmap --script=ssh-auth-methods server.local"}
+{"input":"Detects the SSH version on target.com.","output":"nmap --script=ssh2-enum-algos target.com"}
+{"input":"Scan with maximum parallelism on example.com","output":"nmap --max-parallelism 50 example.com"}
+{"input":"Use the min rtt timeout setting on server.local.","output":"nmap --min-rtt-timeout 50ms server.local"}
+{"input":"Scan with maximum RTT timeout on target.com","output":"nmap --max-rtt-timeout 500ms target.com"}
+{"input":"Detects Shellshock in example.com","output":"nmap --script=http-shellshock example.com"}
+{"input":"Broadcast discovery scanning","output":"nmap --script=broadcast-discover"}
+{"input":"Use script arguments with credentials on server.local","output":"nmap --script-args user=admin,pass=test servidor.local"}
+{"input":"Scan with log errors on target.com","output":"nmap --log-errors target.com"}
+{"input":"Detects Heartbleed in example.com","output":"nmap --script=ssl-heartbleed example.com"}
+{"input":"Scan showing available interfaces","output":"nmap -iflist"}
+{"input":"Use polite timing on server.local","output":"nmap -T2 server.local"}
+{"input":"Scan with aggressive timing on target.com","output":"nmap -T4 target.com"}
+{"input":"Detects DNS information for example.com","output":"nmap --script=dns-brute example.com"}
+{"input":"Scan with custom data string on server.local","output":"nmap --data 0x01020304 server.local"}
+{"input":"Use IP options loose routing on target.com","output":"sudo nmap --ip-options L 10.0.0.1 target.com"}
+{"input":"Scan with XSL stylesheet on example.com","output":"nmap --stylesheet custom.xsl -oX result.xml example.com"}
+{"input":"Detects SNMP community strings on server.local","output":"use nmap with the snmp-brute script -sU server.local"}
+{"input":"Scan with custom Datadirect in Target.com","output":"nmap --datadir \/opt\/nmap target.com"}
+{"input":"Use a custom serviceDB in example.com","output":"nmap --servicedb \/custom\/services example.com"}
+{"input":"Scan with custom versiondb on server.local","output":"nmap --versiondb \/custom\/versions server.local"}
+{"input":"Detects NTP monlist on target.com","output":"sudo nmap --script=ntp-monlist -sU target.com"}
+{"input":"SCTP INIT scan in example.com","output":"sudo nmap -sY example.com"}
+{"input":"Use SCTP COOKIE ECHO on server.local","output":"sudo nmap -sZ server.local"}
+{"input":"Scan and list network interfaces","output":"nmap -iflist"}
+{"input":"Detects MongoDB without authentication on target.com","output":"nmap --script=mongodb-info target.com"}
+{"input":"Scanning in privileged mode on example.com","output":"nmap --unprivileged example.com"}
+{"input":"Use paranoid timing on server.local","output":"nmap -T0 server.local"}
+{"input":"You can perform a quick scan of example.com.","output":"nmap -F example.com"}
+{"input":"I need to discover the hosts in the 10.20.30.0\/24 network.","output":"nmap -sn 10.20.30.0\/24"}
+{"input":"Perform SYN stealth scan on server.local","output":"sudo nmap -sS server.local"}
+{"input":"I want to identify the operating system used by target.com.","output":"sudo nmap -O target.com"}
+{"input":"I need versions of services from example.com.","output":"nmap -sV example.com"}
+{"input":"Perform network discovery on the 172.20.0.0\/16 range","output":"nmap -sn 172.20.0.0\/16"}
+{"input":"Perform a comprehensive aggressive server scan of server.local","output":"sudo nmap -A server.local"}
+{"input":"Search for vulnerabilities on target.com","output":"nmap --script=vuln target.com"}
+{"input":"Export results to example.com in XML format.","output":"nmap -oX result.xml example.com"}
+{"input":"I want to scan for the ACK of server.local.","output":"sudo nmap -sA server.local"}
+{"input":"Perform a ping sweep on the 192.168.25.0\/24 network.","output":"nmap -sn 192.168.25.0\/24"}
+{"input":"Scan of TARGET.com's final stage.","output":"sudo nmap -sF target.com"}
+{"input":"Save the example.com scan in all formats.","output":"nmap -oA result.example.com"}
+{"input":"NULL stealth server scan.","output":"sudo nmap -sN server.local"}
+{"input":"I want to scan for Christmas deals on Target.com.","output":"sudo nmap -sX target.com"}
+{"input":"Example.com scan without ping.","output":"nmap -Pn example.com"}
+{"input":"Scan with server.local verbosity.","output":"nmap -v server.local"}
+{"input":"Use default scripts on target.com","output":"nmap -sC target.com"}
+{"input":"Perform fragmentation on example.com","output":"sudo nmap -f example.com"}
+{"input":"No DNS resolution scan on server.local.","output":"nmap -n server.local"}
+{"input":"Quick scan timing 5 of target.com","output":"nmap -T5 target.com"}
+{"input":"Use lures on example.com","output":"sudo nmap -D RND:10 example.com"}
+{"input":"Only server.local ports are open.","output":"nmap --open -oN result.txt server.local"}
+{"input":"Protocol scan on target.com","output":"sudo nmap -sO target.com"}
+{"input":"Examples of brute force scripts on example.com","output":"nmap --script=brute example.com"}
+{"input":"Using traceroute on server.local","output":"nmap --traceroute server.local"}
+{"input":"Lee presents from a file.","output":"nmap -iL inventory.txt"}
+{"input":"Scripts for discovery on target.com","output":"nmap --script=discovery target.com"}
+{"input":"Scan inactivo con zombis en example.com","output":"sudo nmap -sI 10.0.0.50 example.com"}
+{"input":"Display reasons on server.local","output":"nmap --reason server.local"}
+{"input":"Maximum verbosity on target.com","output":"nmap -vv target.com"}
+{"input":"MTU 24 in example.com","output":"sudo nmap --mtu 24 example.com"}
+{"input":"Delay between probes on server.local","output":"nmap --scan-delay 1s server.local"}
+{"input":"SSL ciphers on target.com","output":"nmap --script=ssl-enum-ciphers target.com"}
+{"input":"Port of origin 80 in example.com","output":"sudo nmap -g 80 example.com"}
+{"input":"SMB resources on server.local","output":"nmap --script=smb-enum-shares servidor.local"}
+{"input":"Exclude 192.168.1.10 from the scan.","output":"nmap --excluding 192.168.1.10 192.168.1.0\/24"}
+{"input":"Ping to target.com using TCP","output":"nmap -PS target.com"}
+{"input":"Random data in example.com","output":"nmap --data-length 50 example.com"}
+{"input":"SSL certificates on server.local","output":"nmap --script=ssl-cert server.local"}
+{"input":"TTL 64 in target.com","output":"sudo nmap --ttl 64 target.com"}
+{"input":"Ping ICMP on example.com","output":"nmap -PE example.com"}
+{"input":"Without randomization on server.local","output":"nmap -r server.local"}
+{"input":"Vulnerabilities in SMB on target.com","output":"nmap --script=smb-vuln* target.com"}
+{"input":"Force DNS on example.com","output":"nmap -R example.com"}
+{"input":"Ping de marca de tiempo en el servidor local.","output":"nmap -PP server.local"}
+{"input":"Fake MAC address on target.com","output":"sudo nmap --spoof-mac 0 target.com"}
+{"input":"Badsum for IDS on example.com","output":"sudo nmap --badsum example.com"}
+{"input":"External scripts on server.local","output":"nmap --script=external servidor.local"}
+{"input":"Fake IP address on target.com","output":"sudo nmap -S 172.16.0.1 target.com"}
+{"input":"Detects WAF on example.com","output":"nmap --script=http-waf-detect example.com"}
+{"input":"Specific interface on server.local","output":"nmap -e eth0 server.local"}
+{"input":"Ping ACK on target.com","output":"nmap -PA target.com"}
+{"input":"Rate limit example on example.com","output":"nmap --max-rate 100 example.com"}
+{"input":"Authentication via HTTP on server.local","output":"nmap --script=http-auth servidor.local"}
+{"input":"Timeout host on target.com","output":"nmap --host-timeout 10m target.com"}
+{"input":"Light version on example.com","output":"nmap -sV --version-light example.com"}
+{"input":"Format compatible con grep en el servidor.local","output":"nmap -oG result.gnmap server.local"}
+{"input":"Scripts exploit vulnerabilities on target.com","output":"nmap --script=exploit target.com"}
+{"input":"Parallel 20 in example.com","output":"nmap --min-parallelism 20 example.com"}
+{"input":"Trace of a packet on target.com","output":"nmap --packet-trace target.com"}
+{"input":"Web directories in example.com","output":"nmap --script=http-enum example.com"}
+{"input":"A retry on server.local","output":"nmap --max-retries 1 server.local"}
+{"input":"Ping SCTP on target.com","output":"nmap -PY target.com"}
+{"input":"Encabezados HTTP en example.com","output":"nmap --script=http-headers example.com"}
+{"input":"Sneaky timing on the local server.","output":"nmap -T2 server.local"}
+{"input":"Safe scripts on target.com","output":"nmap --script=safe target.com"}
+{"input":"Tarifa m\u00ednima en example.com","output":"nmap --min-rate 10 example.com"}
+{"input":"Anonymous FTP to server.local","output":"nmap --script=ftp-anon server.local"}
+{"input":"ARP discovery on 10.50.0.0\/24","output":"sudo nmap -PR 10.50.0.0\/24"}
+{"input":"All probes version on target.com","output":"nmap -sV --version-all target.com"}
+{"input":"Trace script in example.com","output":"nmap --script-trace example.com"}
+{"input":"SQL injection on server.local","output":"nmap --script=http-sql-injection server.local"}
+{"input":"Defeat RST on target.com","output":"nmap --defeat-rst-ratelimit target.com"}
+{"input":"Maximum scanning delay in example.com","output":"nmap --max-scan-delay 10ms example.com"}
+{"input":"Trace de versi\u00f3n en el servidor local.","output":"nmap -sV --version-trace server.local"}
+{"input":"XSS in target.com","output":"nmap --script=http-stored-xss target.com"}
+{"input":"Hostgroup 30 in the 172.30.0.0\/24 network","output":"nmap --max-hostgroup 30 172.30.0.0\/24"}
+{"input":"Initial RTT on example.com","output":"nmap --initial-rtt-timeout 100ms example.com"}
+{"input":"Timeout del script en el servidor local.","output":"nmap --script-timeout 45s server.local"}
+{"input":"No hay hoja de estilo en target.com","output":"nmap --no-stylesheet -oX result.xml target.com"}
+{"input":"DNS system for example.com","output":"nmap --system-dns example.com"}
+{"input":"Statistics every 20 seconds on the server.local","output":"nmap --stats-every 20s server.local"}
+{"input":"WebDAV on target.com","output":"nmap --script=http-webdav-scan target.com"}
+{"input":"Privileged mode on example.com","output":"sudo nmap --privileged example.com"}
+{"input":"Add output to server.local","output":"nmap --append-output -oN result.txt server.local"}
+{"input":"Send Ethernet on target.com","output":"sudo nmap --send-eth target.com"}
+{"input":"HTTP methods in example.com","output":"nmap --script=http-methods example.com"}
+{"input":"Send IP on server.local","output":"nmap --send-ip server.local"}
+{"input":"Output of WebXML on target.com","output":"nmap --webxml -oX resultado.xml target.com"}
+{"input":"SSH authentication methods on example.com","output":"nmap --script=ssh-auth-methods example.com"}
+{"input":"SSH version on server.local","output":"nmap --script=ssh2-enum-algos server.local"}
+{"input":"Max parallel 100 on target.com","output":"nmap --max-parallelism 100 target.com"}
+{"input":"Minimum RTT in example.com","output":"nmap --min-rtt-timeout 100ms example.com"}
+{"input":"Maximum response time on server.local","output":"nmap --max-rtt-timeout 2s server.local"}
+{"input":"Shellshock in target.com","output":"nmap --script=http-shellshock target.com"}
+{"input":"Broadcasting discovery","output":"nmap --script=broadcast-discover"}
+{"input":"Arguments for the script, credentials in example.com","output":"nmap --script-args user=root,pass=admin example.com"}
+{"input":"Errors in the log file on server.local","output":"nmap --log-errors server.local"}
+{"input":"Heartbleed on target.com","output":"nmap --script=ssl-heartbleed target.com"}
+{"input":"List of interfaces","output":"nmap -iflist"}
+{"input":"Polite timing example.com","output":"nmap -T2 example.com"}
+{"input":"Brute force DNS attack on server.local","output":"nmap --script=dns-brute server.local"}
+{"input":"Hex data on target.com","output":"nmap --data 0xaabbccdd target.com"}
+{"input":"Example.com SNMP brute force example.","output":"sudo nmap --script=snmp-brute -sU example.com"}
+{"input":"SCTP INIT on server.local","output":"sudo nmap -sY server.local"}
+{"input":"SCTP COOKIE on target.com","output":"sudo nmap -sZ target.com"}
+{"input":"Informaci\u00f3n sobre MongoDB en example.com","output":"nmap --script=mongodb-info example.com"}
+{"input":"Non-privileged mode on server.local","output":"nmap -u servidor.local"}
+{"input":"Scans very slowly target.com","output":"nmap -T0 target.com"}
+{"input":"Discover live hosts in the 10.10.0.0\/16 range","output":"nmap -sn 10.100.0.0\/16"}
+{"input":"Connectivity scan on 192.168.200.0\/24","output":"nmap -sn 192.168.200.0\/24"}
+{"input":"Search for active devices in the 172.25.0.0\/24 network.","output":"nmap -sn 172.25.0.0\/24"}
+{"input":"Which hosts are up on the 10.1.1.0\/24 network?","output":"nmap -sn 10.1.1.0\/24"}
+{"input":"Window scan on example.com","output":"sudo nmap -sW example.com"}
+{"input":"Maimon scan on local server.","output":"sudo nmap -sM server.local"}
+{"input":"Stealth scanning of services on target.com","output":"sudo nmap -sS -sV target.com"}
+{"input":"Full scan with evasion in example.com","output":"sudo nmap -sS -f -T2 example.com"}
+{"input":"Basic security audit on server.local","output":"sudo nmap -sS -sV -sC server.local"}
+{"input":"Quick evaluation of Target.com","output":"nmap -F -T4 target.com"}
+{"input":"Check for open ports on example.com","output":"nmap -open example.com"}
+{"input":"Verify web services on server.local","output":"nmap -sV server.local"}
+{"input":"Map the 192.168.5.0\/24 network","output":"nmap -sn 192.168.5.0\/24"}
+{"input":"Identification of target.com","output":"nmap -sS -sV -O -sC target.com"}
+{"input":"Network inventory in 10.0.50.0\/24","output":"nmap -sn -oG result.gnmap 10.0.50.0\/24"}
+{"input":"Example.com initial penetration test.","output":"sudo nmap -sS -sV --script=vuln example.com"}
+{"input":"In-depth server analysis of local.","output":"sudo nmap -A -p- server.local"}
+{"input":"Check the firewall on target.com","output":"sudo nmap -sA target.com"}
+{"input":"Check port filtering on example.com","output":"sudo nmap -sA -p 1-1000 example.com"}
+{"input":"Complete, stealthy scan of server.local","output":"sudo nmap -sS -p- -T2 server.local"}
+{"input":"Comprehensive detection of SO on target.com","output":"sudo nmap -O --osscan-guess target.com"}
+{"input":"Search for non-standard ports on example.com","output":"nmap -p- example.com"}
+{"input":"Complete security scan on server.local","output":"sudo nmap -A -p- -oA result server.local"}
+{"input":"Vulnerability assessment on target.com","output":"nmap --script=vuln -oX result.xml target.com"}
+{"input":"Passive discovery in 10.10.10.0\/24","output":"nmap -sn 10.10.10.0\/24"}
+{"input":"Example fingerprinting of .com","output":"sudo nmap -sS -sV -O example.com"}
+{"input":"Analysis of attack surface on server.local","output":"sudo nmap -sS -sV -p- --script=vuln server.local"}
+{"input":"Check the services exhibition on target.com","output":"nmap -sV --open target.com"}
+{"input":"Search for unsafe services on example.com","output":"nmap -sV --script=vuln example.com"}
+{"input":"Red team scan of server.local","output":"sudo nmap -sS -f -D RND:10 -T2 server.local"}
+{"input":"Discovery of the blue team in 192.168.10.0\/24","output":"nmap -sn -PE -PP -PS -PA 192.168.10.0\/24"}
+{"input":"Scan de cumplimiento para target.com","output":"nmap -sV --script=default -oA result target.com"}
+{"input":"Example baseline security for example.com","output":"nmap -sV -sC -oX result.xml example.com"}
+{"input":"Mapping of the topology for the 172.18.0.0\/24 network","output":"nmap -sn --traceroute 172.18.0.0\/24"}
+{"input":"Enumeration of server services.","output":"nmap -sV --version-all server.local"}
+{"input":"Profiling of target users on network.","output":"nmap -A --traceroute target.com"}
+{"input":"Example reconnaissance with stealth.","output":"sudo nmap -sN -T1 example.com"}
+{"input":"Quick server vulnerability assessment.","output":"nmap -F --script=vuln server.local"}
+{"input":"Detection of port knocking on target.com","output":"nmap -Pn --scan-delay 2s target.com"}
+{"input":"Example.com IDS evasion scan example.","output":"sudo nmap -sS -f -D RND:10 -- randomize-hosts example.com"}
+{"input":"Comprehensive server audit of local","output":"sudo nmap -A -p- --script=all -oA result server.local"}
+{"input":"Fast security check on target.com","output":"nmap -F -sV target.com"}
+{"input":"Example.com external penetration test.","output":"nmap -sS -sV --script=http-vuln*,ssl* example.com"}
+{"input":"Internal audit of server.local","output":"sudo nmap -sS -A -p- server.local"}
+{"input":"Scanning of the 192.168.100.0\/24 network","output":"nmap -sS -sV -p- 192.168.100.0\/24"}
+{"input":"Assessment of the perimeter for target.com","output":"nmap -sS -sV --open -oX result.xml target.com"}
+{"input":"Mapping of infrastructure 10.0.0.0\/22","output":"nmap -sn -oG result.gnmap 10.0.0.0\/22"}
+{"input":"Discovery of assets on example.com","output":"nmap -sV --script=discovery example.com"}
+{"input":"Audit de configuraci\u00f3n del servidor local.","output":"nmap --script=default,safe server.local"}
+{"input":"Analysis of exposure on target.com","output":"nmap -sV --open --script=vuln target.com"}
+{"input":"Baseline network of 172.16.0.0\/20","output":"nmap -sn -oA result 172.16.0.0\/20"}
+{"input":"Example.com threat hunting scan example.","output":"nmap --script=malware,backdoor-check example.com"}
+{"input":"Scan de respuesta a incident del servidor local.","output":"sudo nmap -sS -p- --open server.local"}
+{"input":"Analysis of target.com by forensic experts.","output":"nmap -A --script=all -oA result target.com"}
+{"input":"Example.com change detection scan","output":"nmap -sV -oX result.xml example.com"}
+{"input":"Continuous server monitoring of local.","output":"nmap -sS --open -oG result.gnmap server.local"}
+{"input":"Verification of zero trust by target.com","output":"nmap -sS -sV -sC -O target.com"}
+{"input":"Audit of micro-segmentation 10.0.10.0\/24","output":"nmap -sS -p- 10.0.10.0\/24"}
+{"input":"Example.com cloud security scan example.","output":"nmap -Pn -sV --open example.com"}
+{"input":"Scanning of the server.local container.","output":"nmap -sS -p 2375,2376,6443,10250 server.local"}
+{"input":"Test de seguridad de API de Target.com","output":"nmap --script=http-enum,http-methods target.com"}
+{"input":"Example.com web application scanning example.","output":"nmap --script=http-vuln*,http-enum example.com"}
+{"input":"Security audit of the local database server.","output":"nmap -sV -p 1433,3306,5432,27017 server.local"}
+{"input":"Scan of legacy systems at target.com","output":"nmap -sS -sV --script=smb-vuln* target.com"}
+{"input":"Discovery of IoT devices on the 192.168.1.0\/24 network","output":"nmap -sn -p 1883,8883 192.168.1.0\/24"}
+{"input":"Example.com SCADA assessment example","output":"nmap -sV -p 102,502,2404,44818 example.com"}
+{"input":"Scan of industrial control server.local","output":"nmap -p 102,502 server.local"}
+{"input":"Scan of medical devices on target.com","output":"nmap -sV -Pn target.com"}
+{"input":"Example.com building automation audit","output":"sudo nmap -sU -p 47808 example.com"}
+{"input":"Scan of the local server at the point of sale.","output":"nmap -sV -p 22,23,80,443 server.local"}
+{"input":"ATM security scan by target.com","output":"nmap -sS -sV -O target.com"}
+{"input":"Example.com kiosk assessment","output":"nmap -sV -Pn example.com"}
+{"input":"Scan of video surveillance on server.local","output":"nmap -p 80,554,8080 server.local"}
+{"input":"Audit of access control system for target.com","output":"nmap -sV -p 80,443 target.com"}
+{"input":"Example.com HVAC system scan example","output":"sudo nmap -sU -p 47808 example.com"}
+{"input":"Scan of the elevator control server (server.local).","output":"nmap -sV server.local"}
+{"input":"Audit de iluminaci\u00f3n inteligente para target.com","output":"nmap -p 80,443,1883 target.com"}
+{"input":"Example.com power management scan example.","output":"nmap -p 161,502 example.com"}
+{"input":"UPS monitoring scan of server.local","output":"sudo nmap -sU -p 161 server.local"}
+{"input":"Generator control audit of target.com","output":"nmap -p 80,502 target.com"}
+{"input":"Example.com environmental monitoring scan","output":"sudo nmap -sU -p 161 example.com"}
+{"input":"Audit of the fire alarm system for server.local","output":"nmap -sV server.local"}
+{"input":"Scan of the badge reader on target.com","output":"nmap -p 80,443 target.com"}
+{"input":"Example.com parking system audit","output":"nmap -sV example.com"}
+{"input":"Scanning of digital signage on server.local","output":"nmap -p 80,443 server.local"}
+{"input":"Audit of audio-visual system for target.com","output":"nmap -p 23,80 target.com"}
+{"input":"Example.com conference equipment scanning","output":"nmap -p 443,3478 example.com"}
+{"input":"Wireless AP audit of server.local","output":"nmap -p 22,23,80,443 server.local"}
+{"input":"Scan of the network switch on target.com","output":"sudo nmap -sU -p 161 target.com"}
+{"input":"Example.com router security audit example","output":"nmap -p 22,23,80,443 example.com"}
+{"input":"Scan del balanceador de carga del servidor.local","output":"nmap -p 80,443 server.local"}
+{"input":"Audit of firewall rules for target.com","output":"sudo nmap -sA target.com"}
+{"input":"Example.com IDS IPS detection scan","output":"sudo nmap -sS -f -T2 example.com"}
+{"input":"Detection of WAF on server.local","output":"nmap --script=http-waf-detect server.local"}
+{"input":"Check of DDoS mitigation for target.com","output":"nmap -sS --max-rate 10 target.com"}
+{"input":"Example.com CDN detection","output":"nmap --traceroute example.com"}
+{"input":"Scan of the local server's proxy server.","output":"nmap -p 3128,8080,8888 server.local"}
+{"input":"Audit of VPN endpoint for target.com","output":"nmap -p 500,1194,1723,4500 target.com"}
+{"input":"Example.com jump server scan example","output":"nmap -p 22,3389 example.com"}
+{"input":"Bastion host server audit.local","output":"nmap -sS -p 22 server.local"}
+{"input":"Security scan of the mail server for target.com","output":"nmap -sV -p 25,110,143,465,587,993,995 target.com"}
+{"input":"Example.com DNS server audit example","output":"nmap -sU -p 53 example.com"}
+{"input":"DHCP server scan of server.local","output":"sudo nmap -sU -p 67,68 server.local"}
+{"input":"Audit del servidor NTP de target.com","output":"sudo nmap -sU -p 123 target.com"}
+{"input":"Example.com syslog server scan example","output":"sudo nmap -sU -p 514 example.com"}
+{"input":"SNMP audit of server.local","output":"sudo nmap -sU -p 161,162 --script=snmp-brute server.local"}
+{"input":"Security scan of FTP server by target.com","output":"nmap -sV -p 21 --script=ftp-anon target.com"}
+{"input":"Example.com TFTP server audit example","output":"sudo nmap -sU -p 69 example.com"}
+{"input":"Security scan of the SSH server.local","output":"nmap -sV -p 22 --script=ssh2-enum-algos server.local"}
+{"input":"Audit of Telnet service at target.com","output":"nmap -p 23 target.com"}
+{"input":"Example.com RDP security scan example.","output":"nmap -p 3389 example.com"}
+{"input":"VNC server audit of server.local","output":"nmap -p 5900 server.local"}
+{"input":"Scan of LDAP server at target.com","output":"nmap -p 389,636 --script=ldap-rootdse target.com"}
+{"input":"Example.com Kerberos service audit example","output":"nmap -p 88,464 example.com"}
+{"input":"Scan of NFS share on server.local","output":"nmap -p 2049 --script=nfs-ls servidor.local"}
+{"input":"Security audit of SMB services for Target.com","output":"nmap -p 139,445 --script=smb-vuln* target.com"}
+{"input":"Example.com iSCSI target scan","output":"nmap -p 3260 example.com"}
+{"input":"Audit of the backup server.","output":"nmap -p 873,9091 server.local"}
+{"input":"Monitor server scan of target.com","output":"nmap -p 3000,9090,9093 target.com"}
+{"input":"Example.com logging infrastructure audit example.","output":"nmap -p 514,5044,9200 example.com"}
+{"input":"Scan of a time series database on server.local","output":"nmap -p 8086 server.local"}
+{"input":"Audit of message queue at target.com","output":"nmap -p 5672,9092,15672 target.com"}
+{"input":"Example.com cache server scan example","output":"nmap -p 6379,11211 example.com"}
+{"input":"Audit del motor de b\u00fasqueda para el servidor local.","output":"nmap -p 9200,9300 server.local"}
+{"input":"Scan of CI\/CD pipeline on target.com","output":"nmap -p 8080,9000 target.com"}
+{"input":"Example.com source control server audit example","output":"nmap -p 22,80,443,7990 example.com"}
+{"input":"Scan of the artifact repository on server.local","output":"nmap -p 8081,8082 server.local"}
+{"input":"Audit del registro de contenedores de target.com","output":"nmap -p 5000 target.com"}
+{"input":"Example.com orchestration platform scan example.","output":"nmap -p 2377,6443 example.com"}
+{"input":"Audit of service mesh on server.local","output":"nmap -p 15000,15001 server.local"}
+{"input":"Scan of the API gateway on target.com","output":"nmap -p 8080,8443 target.com"}
+{"input":"Example.com identity provider audit example","output":"nmap -p 80,443,8080,8443 example.com"}
+{"input":"Scan of secrets management on server.local","output":"nmap -p 8200 server.local"}
+{"input":"Audit de la autoridad certificadora de target.com","output":"nmap -p 443 target.com"}
+{"input":"Example.com PKI infrastructure scan example.","output":"nmap -p 80,443 example.com"}
+{"input":"Audit of HSM connectivity for server.local","output":"nmap -p 1792 server.local"}
+{"input":"Scan of encryption key management for target.com","output":"nmap -p 8200 target.com"}
+{"input":"Example.com token service audit example","output":"nmap -p 8080,8443 example.com"}
+{"input":"Scan of the server.local authentication service.","output":"nmap -p 80,443 server.local"}
+{"input":"Audit of the authorization server at target.com","output":"nmap -p 8080,9000 target.com"}
+{"input":"Discover hosts in 192.168.1.0\/24","output":"nmap -sn 192.168.1.0\/24"}
+{"input":"Which devices are active on the 10.0.0.0\/24 network?","output":"nmap -sn 10.0.0.0\/24"}
+{"input":"Find devices in the 172.16.0.0\/16 range","output":"nmap -sn 172.16.0.0\/16"}
+{"input":"Map the 192.168.0.0\/24 network","output":"nmap -sn 192.168.0.0\/24"}
+{"input":"Ping sweep on 10.10.0.0\/16","output":"nmap -sn 10.10.0.0\/16"}
+{"input":"Discover live hosts in the 172.20.0.0\/24 network","output":"nmap -sn 172.20.0.0\/24"}
+{"input":"Search for active devices on the network 192.168.100.0\/24","output":"nmap -sn 192.168.100.0\/24"}
+{"input":"Identify hosts in 10.50.50.0\/24","output":"nmap -sn 10.50.50.0\/24"}
+{"input":"Connectivity scan on 192.168.2.0\/24","output":"nmap -sn 192.168.2.0\/24"}
+{"input":"Passive discovery of 10.20.30.0\/24","output":"nmap -sn 10.20.30.0\/24"}
+{"input":"Find all hosts in the 172.31.0.0\/24 network","output":"nmap -sn 172.31.0.0\/24"}
+{"input":"Quick mapping of 192.168.5.0\/24","output":"nmap -sn 192.168.5.0\/24"}
+{"input":"Discover complete network 10.0.0.0\/22","output":"nmap -sn 10.0.0.0\/22"}
+{"input":"Identify devices on subnet 192.168.10.0\/24","output":"nmap -sn 192.168.10.0\/24"}
+{"input":"Find active hosts without scanning ports in 10.1.1.0\/24","output":"nmap -sn 10.1.1.0\/24"}
+{"input":"Discovery of the ARP range in 192.168.1.0\/24","output":"sudo nmap -PR 192.168.1.0\/24"}
+{"input":"Use ARP to discover hosts in the 10.0.0.0\/24 network.","output":"sudo nmap -PR 10.0.0.0\/24"}
+{"input":"Ping TCP on 192.168.1.0\/24","output":"nmap -PS 192.168.1.0\/24"}
+{"input":"Discovery with TCP SYN in 10.0.0.0\/24","output":"nmap -PS 10.0.0.0\/24"}
+{"input":"UDP ping on 192.168.1.0\/24","output":"sudo nmap -PU 192.168.1.0\/24"}
+{"input":"Use ICMP ping on the 10.0.0.0\/24 network.","output":"nmap -PE 10.0.0.0\/24"}
+{"input":"Ping echo on 192.168.1.0\/24","output":"nmap -PE 192.168.1.0\/24"}
+{"input":"Discovery with ICMP timestamp on 10.0.0.0\/24","output":"nmap -PP 10.0.0.0\/24"}
+{"input":"Ping network mask on 192.168.1.0\/24","output":"nmap -PM 192.168.1.0\/24"}
+{"input":"Discover hosts without ping in 10.0.0.0\/24","output":"nmap -Pn 10.0.0.0\/24"}
+{"input":"Detects versions on example.com","output":"nmap -sV example.com"}
+{"input":"What services does target.com offer?","output":"nmap -sV target.com"}
+{"input":"Identify versions of services on server.local","output":"nmap -sV server.local"}
+{"input":"Scan with version detection at 192.168.1.1","output":"nmap -sV 192.168.1.1"}
+{"input":"What software does example.com use?","output":"nmap -sV example.com"}
+{"input":"Identify services and versions on target.com","output":"nmap -sV target.com"}
+{"input":"Comprehensive detection of versions on server.local","output":"nmap -sV --version-intensity 9 server.local"}
+{"input":"Versions with maximum intensity on example.com","output":"nmap -sV --version-intensity 9 example.com"}
+{"input":"Aggressive detection of versions on target.com","output":"nmap -sV --version-all target.com"}
+{"input":"Use all the probes in the version 1.0 server.local.","output":"nmap -sV --version-all server.local"}
+{"input":"Light detection of versions on example.com","output":"nmap -sV --version-light example.com"}
+{"input":"Quick scan of versions on target.com","output":"nmap -sV --version-light target.com"}
+{"input":"Identify banners on server.local","output":"nmap -sV server.local"}
+{"input":"Detects web services on example.com","output":"nmap -sV -p 80,443,8080,8443 example.com"}
+{"input":"Is http available on target.com?","output":"nmap -sV -p 80,443 target.com"}
+{"input":"Identify whether Apache or Nginx is running on the server.local","output":"nmap -sV -p 80,443 server.local"}
+{"input":"Detects the SSH version on example.com","output":"nmap -sV -p 22 example.com"}
+{"input":"What version of OpenSSH does target.com use?","output":"nmap -sV -p 22 target.com"}
+{"input":"Identify the FTP service on server.local","output":"nmap -sV -p 21 server.local"}
+{"input":"Detects database on example.com","output":"nmap -sV -p 3306,5432,1433 example.com"}
+{"input":"What database is used on target.com?","output":"nmap -sV -p 3306,5432,1433,27017 target.com"}
+{"input":"Identify MySQL on the server.local.","output":"nmap -sV -p 3306 server.local"}
+{"input":"Detects PostgreSQL on example.com","output":"nmap -sV -p 5432 example.com"}
+{"input":"Version of MongoDB on target.com","output":"nmap -sV -p 27017 target.com"}
+{"input":"Identify email services on server.local","output":"nmap -sV -p 25,110,143,465,587,993,995 server.local"}
+{"input":"Detects the operating system of example.com.","output":"sudo nmap -O example.com"}
+{"input":"What operating system does target.com use?","output":"sudo nmap -O target.com"}
+{"input":"Identify the server operating system.","output":"sudo nmap -O server.local"}
+{"input":"Detection of OS at 192.168.1.1","output":"sudo nmap -O 192.168.1.1"}
+{"input":"It is either Windows or Linux, for example on example.com","output":"sudo nmap -O example.com"}
+{"input":"Detects OS with aggressive behavior on target.com","output":"sudo nmap -O --osscan-guess target.com"}
+{"input":"Guess the server operating system.","output":"sudo nmap -O --osscan-guess server.local"}
+{"input":"Example.com OS fingerprinting example.","output":"sudo nmap -O example.com"}
+{"input":"Identify the exact version of the operating system on target.com","output":"sudo nmap -O --osscan-guess target.com"}
+{"input":"Detects OS without ping on server.local","output":"sudo nmap -O -Pn server.local"}
+{"input":"OS detection ignoring discovery on example.com","output":"sudo nmap -O -Pn example.com"}
+{"input":"Operating system with maximum information on target.com","output":"sudo nmap -A target.com"}
+{"input":"Complete detection including SO on server.local","output":"sudo nmap -A server.local"}
+{"input":"Aggressive scanning with OS in example.com","output":"sudo nmap -A example.com"}
+{"input":"Everything about target.com including the operating system","output":"sudo nmap -A target.com"}
+{"input":"Example.com stealth scan.","output":"sudo nmap -sS example.com"}
+{"input":"Stealth scan of target.com","output":"sudo nmap -sS target.com"}
+{"input":"SYN scan on server.local","output":"sudo nmap -sS server.local"}
+{"input":"Scan without being detected on example.com","output":"sudo nmap -sS -T2 example.com"}
+{"input":"Silent scan of target.com","output":"sudo nmap -sS -T1 target.com"}
+{"input":"Very discreet on server.local.","output":"sudo nmap -sS -T0 server.local"}
+{"input":"Maximum secrecy in example.com","output":"sudo nmap -sS -T0 example.com"}
+{"input":"Paranoid scan of target.com","output":"nmap -T0 target.com"}
+{"input":"Paranoid timing on server.local","output":"nmap -T0 server.local"}
+{"input":"Extremely slow on example.com","output":"nmap -T0 example.com"}
+{"input":"Sneaky scan of target.com","output":"nmap -T1 target.com"}
+{"input":"Sneaky timing on the local server.","output":"nmap -T1 server.local"}
+{"input":"Example.com scan","output":"nmap -T2 example.com"}
+{"input":"Polite timing on target.com","output":"nmap -T2 target.com"}
+{"input":"FIN scan on server.local","output":"sudo nmap -sF server.local"}
+{"input":"Example.com scan complete.","output":"sudo nmap -sF example.com"}
+{"input":"NULL scan on target.com","output":"sudo nmap -sN target.com"}
+{"input":"Scan del servidor local.","output":"sudo nmap -sN server.local"}
+{"input":"Christmas scan example.com","output":"sudo nmap -sX example.com"}
+{"input":"Christmas scan of target.com","output":"sudo nmap -sX target.com"}
+{"input":"Segment packages on server.local","output":"sudo nmap -f server.local"}
+{"input":"Use fragmentation in example.com","output":"sudo nmap -f example.com"}
+{"input":"Packet fragmentation in target.com","output":"sudo nmap -f target.com"}
+{"input":"Scan with decoys on server.local","output":"sudo nmap -D RND:10 server.local"}
+{"input":"Use lures on example.com","output":"sudo nmap -D RND:10 example.com"}
+{"input":"Decoy scan using lures on target.com","output":"sudo nmap -D RND:10 target.com"}
+{"input":"Hide my IP with decoys on server.local","output":"sudo nmap -D RND:10 server.local"}
+{"input":"Scan with a false IP address on example.com","output":"sudo nmap -S 10.10.10.10 example.com"}
+{"input":"Spoof the originating IP address on target.com.","output":"sudo nmap -S 172.16.0.1 target.com"}
+{"input":"Use the source IP address 192.168.100.100 on server.local.","output":"sudo nmap -S 192.168.100.100 server.local"}
+{"input":"Spoofing of MAC address on example.com","output":"sudo nmap --spoof-mac 0 example.com"}
+{"input":"Spoof MAC on target.com","output":"sudo nmap --spoof-mac 0 target.com"}
+{"input":"Random MAC address on server.local","output":"sudo nmap --spoof-mac 0 server.local"}
+{"input":"Use a specific MAC address in example.com","output":"sudo nmap --spoof-mac AA:BB:CC:DD:EE:FF example.com"}
+{"input":"Idle scan with zombie on target.com","output":"sudo nmap -sI 192.168.1.5 target.com"}
+{"input":"Idle scan using 10.0.0.50 on server.local","output":"sudo nmap -sI 10.0.0.50 servidor.local"}
+{"input":"Zombie scan using the IP address 172.16.0.10 on example.com","output":"sudo nmap -sI 172.16.0.10 example.com"}
+{"input":"MTU of 24 bytes on target.com","output":"sudo nmap --mtu 24 target.com"}
+{"input":"Use MTU 16 on server.local","output":"sudo nmap --mtu 16 server.local"}
+{"input":"Personalized MTU in example.com","output":"sudo nmap --mtu 32 example.com"}
+{"input":"A method for bypassing IDS on target.com","output":"sudo nmap --badsum target.com"}
+{"input":"Invalid checksum on server.local","output":"sudo nmap --badsum server.local"}
+{"input":"Avoid IDS with badsum in example.com","output":"sudo nmap --badsum example.com"}
+{"input":"Delay of 2 seconds between probes on target.com","output":"nmap --scan-delay 2s target.com"}
+{"input":"A delay of 1 second on server.local","output":"nmap --scan-delay 1s server.local"}
+{"input":"500 ms between probes in example.com","output":"nmap --scan-delay 500ms example.com"}
+{"input":"Limit of 50 packages per target.com","output":"nmap --max-rate 50 target.com"}
+{"input":"Maximum 100 packages per second on server.local","output":"nmap --max-rate 100 server.local"}
+{"input":"Limit to 10 packages\/second on example.com","output":"nmap --max-rate 10 example.com"}
+{"input":"Search for vulnerabilities on example.com","output":"nmap --script=vuln example.com"}
+{"input":"Detects vulnerabilities in target.com","output":"nmap --script=vuln target.com"}
+{"input":"Vulnerability scanning on server.local","output":"nmap --script=vuln server.local"}
+{"input":"Vulnerability scripts for 192.168.1.1","output":"nmap --script=vuln 192.168.1.1"}
+{"input":"Check CVEs on example.com","output":"nmap --script=vuln example.com"}
+{"input":"Default scripts on target.com","output":"nmap -sC target.com"}
+{"input":"Use the default scripts on the server.local.","output":"nmap -sC server.local"}
+{"input":"Default scripting engine en example.com","output":"nmap -sC example.com"}
+{"input":"Safe scripts on target.com","output":"nmap --script=safe target.com"}
+{"input":"Only safe scripts on server.local","output":"nmap --script=safe server.local"}
+{"input":"Search for malware on example.com","output":"nmap --script=malware example.com"}
+{"input":"Detects backdoors on target.com","output":"nmap --script=backdoor-check target.com"}
+{"input":"Malware and backdoors on server.local","output":"nmap --script=malware,backdoor-check server.local"}
+{"input":"Web vulnerabilities in example.com","output":"nmap --script=http-vuln* example.com"}
+{"input":"Vulnerabilities in HTTP on target.com","output":"nmap --script=http-vuln* target.com"}
+{"input":"Search for SQL injection on server.local","output":"nmap --script=http-sql-injection server.local"}
+{"input":"Detects SQL injection in example.com","output":"nmap --script=http-sql-injection example.com"}
+{"input":"Search for XSS vulnerabilities on target.com","output":"nmap --script=http-stored-xss target.com"}
+{"input":"Cross-site scripting on server.local","output":"nmap --script=http-stored-xss,http-dombased-xss server.local"}
+{"input":"List web directories on example.com","output":"nmap --script=http-enum example.com"}
+{"input":"Discover directories on target.com","output":"nmap --script=http-enum target.com"}
+{"input":"HTTP enumeration on server.local.","output":"nmap --script=http-enum server.local"}
+{"input":"HTTP methods available on example.com","output":"nmap --script=http-methods example.com"}
+{"input":"What HTTP methods does target.com accept?","output":"nmap --script=http-methods target.com"}
+{"input":"Detects WAF on server.local","output":"nmap --script=http-waf-detect server.local"}
+{"input":"There is an application firewall on example.com.","output":"nmap --script=http-waf-detect example.com"}
+{"input":"Encabezados HTTP de target.com","output":"nmap --script=http-headers target.com"}
+{"input":"Read headers on server.local","output":"nmap --script=http-headers server.local"}
+{"input":"HTTP technologies in example.com","output":"nmap --script=http-headers example.com"}
+{"input":"SSL vulnerabilities in target.com","output":"nmap --script=ssl-enum-ciphers target.com"}
+{"input":"Weak SSL ciphers on server.local","output":"nmap --script=ssl-enum-ciphers server.local"}
+{"input":"Configure SSL on example.com","output":"nmap --script=ssl-cert,ssl-enum-ciphers example.com"}
+{"input":"SSL certificates from target.com","output":"nmap --script=ssl-cert target.com"}
+{"input":"Information about certificate on server.local","output":"nmap --script=ssl-cert server.local"}
+{"input":"Heartbleed in example.com","output":"nmap --script=ssl-heartbleed example.com"}
+{"input":"Check for Heartbleed vulnerability on target.com","output":"nmap --script=ssl-heartbleed target.com"}
+{"input":"CVE-2014-0160 on server.local","output":"nmap --script=ssl-heartbleed server.local"}
+{"input":"SMB vulnerabilities in example.com","output":"nmap --script=smb-vuln* example.com"}
+{"input":"SMB vulnerabilities in target.com","output":"nmap --script=smb-vuln* target.com"}
+{"input":"EternalBlue on server.local","output":"nmap --script=smb-vuln-ms17-010 server.local"}
+{"input":"MS17-010 on example.com","output":"nmap --script=smb-vuln-ms17-010 example.com"}
+{"input":"List SMB resources on target.com","output":"nmap --script=smb-enum-shares target.com"}
+{"input":"Share SMB of server.local","output":"nmap --script=smb-enum-shares servidor.local"}
+{"input":"SMB users on example.com","output":"nmap --script=smb-enum-users example.com"}
+{"input":"List users on Target.com","output":"nmap --script=smb-enum-users target.com"}
+{"input":"Anonymous FTP to server.local","output":"nmap --script=ftp-anon server.local"}
+{"input":"Log in anonymously via FTP on example.com","output":"nmap --script=ftp-anon example.com"}
+{"input":"Weak SSH algorithms on target.com","output":"nmap --script=ssh2-enum-algos target.com"}
+{"input":"SSH algorithms on server.local","output":"nmap --script=ssh2-enum-algos server.local"}
+{"input":"SSH authentication methods in example.com.","output":"nmap --script=ssh-auth-methods example.com"}
+{"input":"Brute force attack on DNS for target.com","output":"nmap --script=dns-brute target.com"}
+{"input":"Server local subdomains.","output":"nmap --script=dns-brute server.local"}
+{"input":"Examples of SNMP community strings for example.com","output":"sudo nmap --script=snmp-brute -sU example.com"}
+{"input":"Forcibly accessing SNMP on target.com","output":"use nmap with the snmp-brute script and the -s option"}
+{"input":"UDP scan on example.com","output":"sudo nmap -sU example.com"}
+{"input":"UDP scan of target.com","output":"sudo nmap -sU target.com"}
+{"input":"Scan UDP ports on server.local","output":"sudo nmap -sU server.local"}
+{"input":"UDP on 192.168.1.1","output":"sudo nmap -sU 192.168.1.1"}
+{"input":"UDP port 53 in example.com","output":"sudo nmap -sU -p 53 example.com"}
+{"input":"DNS UDP on target.com","output":"sudo nmap -sU -p 53 target.com"}
+{"input":"Port 161 UDP on server.local","output":"sudo nmap -sU -p 161 server.local"}
+{"input":"SNMP UDP in example.com","output":"sudo nmap -sU -p 161,162 example.com"}
+{"input":"Common UDP ports used on target.com","output":"sudo nmap -sU --top-ports 20 target.com"}
+{"input":"Top 100 UDP on server.local","output":"sudo nmap -sU --top-ports 100 server.local"}
+{"input":"Example.com NTP UDP example.","output":"sudo nmap -sU -p 123 example.com"}
+{"input":"Port 123 UDP on target.com","output":"sudo nmap -sU -p 123 target.com"}
+{"input":"DHCP UDP on server.local","output":"sudo nmap -sU -p 67,68 server.local"}
+{"input":"DHCP ports in example.com","output":"sudo nmap -sU -p 67,68 example.com"}
+{"input":"TFTP UDP on target.com","output":"sudo nmap -sU -p 69 target.com"}
+{"input":"Port 69 UDP on server.local.","output":"sudo nmap -sU -p 69 server.local"}
+{"input":"Syslog UDP in example.com","output":"sudo nmap -sU -p 514 example.com"}
+{"input":"Port 514 UDP on target.com","output":"sudo nmap -sU -p 514 target.com"}
+{"input":"NetBIOS UDP on server.local","output":"sudo nmap -sU -p 137,138 server.local"}
+{"input":"NetBIOS ports in example.com","output":"sudo nmap -sU -p 137,138 example.com"}
+{"input":"IPsec UDP on target.com","output":"sudo nmap -sU -p 500,4500 target.com"}
+{"input":"VPN UDP on local server.","output":"sudo nmap -sU -p 500,1194,4500 server.local"}
+{"input":"Example.com OpenVPN UDP example.","output":"sudo nmap -sU -p 1194 example.com"}
+{"input":"WireGuard UDP on target.com","output":"sudo nmap -sU -p 51820 target.com"}
+{"input":"RADIUS UDP on server.local","output":"sudo nmap -sU -p 1812,1813 server.local"}
+{"input":"RADIUS ports in example.com","output":"sudo nmap -sU -p 1812,1813 example.com"}
+{"input":"RIP UDP on target.com","output":"sudo nmap -sU -p 520 target.com"}
+{"input":"VXLAN UDP on server.local","output":"sudo nmap -sU -p 4789 server.local"}
+{"input":"Example.com using Memcached UDP.","output":"sudo nmap -sU -p 11211 example.com"}
+{"input":"CoAP UDP on target.com","output":"sudo nmap -sU -p 5683 target.com"}
+{"input":"MQTT UDP on server.local","output":"sudo nmap -sU -p 1883 server.local"}
+{"input":"Minecraft UDP example on example.com","output":"sudo nmap -sU -p 25565 example.com"}
+{"input":"Gaming ports UDP on target.com","output":"sudo nmap -sU -p 7777,27015 target.com"}
+{"input":"Steam UDP on local server.","output":"sudo nmap -sU -p 27015,27016 server.local"}
+{"input":"All UDP addresses on example.com","output":"sudo nmap -sU -p- example.com"}
+{"input":"Complete UDP scan on target.com","output":"sudo nmap -sU -p 1-65535 target.com"}
+{"input":"Save the example.com scan in XML format.","output":"nmap -oX result.xml example.com"}
+{"input":"XML output from target.com","output":"nmap -oX result.xml target.com"}
+{"input":"Export to XML server.local","output":"nmap -oX result.xml server.local"}
+{"input":"Format XML in example.com","output":"nmap -oX result.xml example.com"}
+{"input":"Save in the standard format for target.com.","output":"nmap -oN result.txt target.com"}
+{"input":"Normal server output.","output":"nmap -oN result.txt server.local"}
+{"input":"Plain text in example.com","output":"nmap -oN result.txt example.com"}
+{"input":"Grepable format for target.com","output":"nmap -oG result.gnmap target.com"}
+{"input":"Grepable server output.","output":"nmap -oG result.gnmap server.local"}
+{"input":"Formato Gnmap en example.com","output":"nmap -oG resultado.gnmap example.com"}
+{"input":"All output formats for target.com","output":"nmap -oA result target.com"}
+{"input":"Export in all formats for server.local","output":"nmap -oA result.local"}
+{"input":"Complete example.com output.","output":"nmap -oA result.example.com"}
+{"input":"XML and text format output for target.com","output":"nmap -oX result.xml -oN result.txt target.com"}
+{"input":"Only ports open in the server.local file.","output":"nmap --open -oN result.txt server.local"}
+{"input":"Example.com protected port list.","output":"nmap --open -oX resultado.xml example.com"}
+{"input":"Result with active hosts from target.com","output":"nmap --open -oG result.gnmap target.com"}
+{"input":"Verbose server output.","output":"nmap -v server.local"}
+{"input":"Verbose scan of example.com","output":"nmap -v example.com"}
+{"input":"Detailed information about target.com","output":"nmap -v target.com"}
+{"input":"Maximum verbosity on server.local","output":"nmap -vv server.local"}
+{"input":"Very verbose on example.com","output":"nmap -vv example.com"}
+{"input":"Debug mode for target.com","output":"nmap -d target.com"}
+{"input":"Debugging on server.local","output":"nmap -d server.local"}
+{"input":"Debugging level 2 in example.com","output":"nmap -d2 example.com"}
+{"input":"Display reasons for state in target.com","output":"nmap - target.com"}
+{"input":"Reason for the flag on server.local","output":"nmap --reason server.local"}
+{"input":"Why are the ports open on example.com","output":"nmap --reason example.com"}
+{"input":"Trace packet from target.com","output":"nmap --packet-trace target.com"}
+{"input":"Package tracking on server.local","output":"nmap --packet-trace server.local"}
+{"input":"Show examples on example.com","output":"nmap --packet-trace example.com"}
+{"input":"Statistics every 30 seconds on target.com","output":"nmap --stats-every 30s target.com"}
+{"input":"Statistics every minute on server.local","output":"nmap --stats-every 1m server.local"}
+{"input":"Progress every 10 seconds on example.com","output":"nmap --stats-every 10s example.com"}
+{"input":"Attach an existing file from target.com","output":"nmap --append-output -oN result.txt target.com"}
+{"input":"Add to the server.local file.","output":"nmap --append-output -oX resultado.xml servidor.local"}
+{"input":"Resume from file on example.com","output":"nmap --resume resultado.xml example.com"}
+{"input":"Continue scanning target.com.","output":"nmap --resume result.xml target.com"}
+{"input":"Without an XML stylesheet on server.local","output":"nmap --no-stylesheet -oX result.xml server.local"}
+{"input":"XML without XSL in example.com","output":"nmap --no-stylesheet -oX result.xml example.com"}
+{"input":"Personalized stylesheet on target.com","output":"nmap --stylesheet custom.xsl -oX result.xml target.com"}
+{"input":"Output of WebXML on server.local","output":"nmap --webxml -oX resultado.xml servidor.local"}
+{"input":"Web XML format example on example.com","output":"nmap --webxml -oX resultado.xml example.com"}
+{"input":"The timing is normal on example.com","output":"nmap -T3 example.com"}
+{"input":"Timing of T3 on target.com","output":"nmap -T3 target.com"}
+{"input":"Normal speed on server.local","output":"nmap -T3 server.local"}
+{"input":"Quick scan of example.com","output":"nmap -T4 example.com"}
+{"input":"Aggressive T4 ad on target.com","output":"nmap -T4 target.com"}
+{"input":"Aggressive timing on server.local","output":"nmap -T4 server.local"}
+{"input":"Maximum speed on example.com","output":"nmap -T5 example.com"}
+{"input":"Perfect timing on target.com.","output":"nmap -T5 target.com"}
+{"input":"T5 ultra fast on local server.","output":"nmap -T5 server.local"}
+{"input":"Slow scan on example.com","output":"nmap -T1 example.com"}
+{"input":"Timing strategically on target.com","output":"nmap -T1 target.com"}
+{"input":"Secret T1 on local server.","output":"nmap -T1 server.local"}
+{"input":"Extremely slow on example.com","output":"nmap -T0 example.com"}
+{"input":"Paranoid mode activated on target.com","output":"nmap -T0 target.com"}
+{"input":"T0 paranoid on local server.","output":"nmap -T0 server.local"}
+{"input":"Polite timing example.com","output":"nmap -T2 example.com"}
+{"input":"T2 polite on target.com","output":"nmap -T2 target.com"}
+{"input":"Polite scan on server.local","output":"nmap -T2 server.local"}
+{"input":"Minimum parallelism of 10 in example.com","output":"nmap --min-parallelism 10 example.com"}
+{"input":"At least 20 parallel connections on target.com","output":"nmap --min-parallelism 20 target.com"}
+{"input":"Maximum parallelism of 100 on server.local","output":"nmap --max-parallelism 100 server.local"}
+{"input":"Maximum 50 parallel in example.com","output":"nmap --max-parallelism 50 example.com"}
+{"input":"Minimum rate of 10 packages on target.com","output":"nmap --min-rate 10 target.com"}
+{"input":"Minimum 50 packages per second on server.local","output":"nmap --min-rate 50 server.local"}
+{"input":"Maximum rate of 100 on example.com","output":"nmap --max-rate 100 example.com"}
+{"input":"Maximum 500 packages\/second on target.com","output":"nmap --max-rate 500 target.com"}
+{"input":"Limit to 1000 packages on server.local","output":"nmap --max-rate 1000 server.local"}
+{"input":"Timeout de host de 5 minutos in example.com","output":"nmap --host-timeout 5m example.com"}
+{"input":"10-minute timeout for hosting on target.com","output":"nmap --host-timeout 10m target.com"}
+{"input":"Maximum timeout of 30 seconds on server.local","output":"nmap --host-timeout 30s server.local"}
+{"input":"Scan delay of 1 second on example.com","output":"nmap --scan-delay 1s example.com"}
+{"input":"Delay of 500ms on target.com","output":"nmap --scan-delay 500ms target.com"}
+{"input":"Delay of 2 seconds on server.local","output":"nmap --scan-delay 2s server.local"}
+{"input":"Maximum scanning delay of 20ms on example.com.","output":"nmap --max-scan-delay 20ms example.com"}
+{"input":"Maximum delay of 10ms on target.com","output":"nmap --max-scan-delay 10ms target.com"}
+{"input":"Initial RTT of 100ms on server.local","output":"nmap --initial-rtt-timeout 100ms server.local"}
+{"input":"Initial RTT of 200ms on example.com","output":"nmap --initial-rtt-timeout 200ms example.com"}
+{"input":"Minimum RTT timeout of 50ms on target.com","output":"nmap --min-rtt-timeout 50ms target.com"}
+{"input":"Minimum RTT of 100ms on the server.local","output":"nmap --min-rtt-timeout 100ms server.local"}
+{"input":"Maximum RTT timeout of 1 second in example.com","output":"nmap --max-rtt-timeout 1s example.com"}
+{"input":"Maximum RTT of 500ms on target.com","output":"nmap --max-rtt-timeout 500ms target.com"}
+{"input":"Max attempts 1 on server.local","output":"nmap --max-retries 1 server.local"}
+{"input":"Maximum of 2 attempts in example.com","output":"nmap --max-retries 2 example.com"}
+{"input":"Only 1 retry on target.com","output":"nmap --max-retries 1 target.com"}
+{"input":"Minimum host group of 10 on the 192.168.1.0\/24 network","output":"nmap --min-hostgroup 10 192.168.1.0\/24"}
+{"input":"Minimum 50 hosts per group in the 10.0.0.0\/24 network","output":"nmap --min-hostgroup 50 10.0.0.0\/24"}
+{"input":"Maximum host group of 100 on the network 172.16.0.0\/24","output":"nmap --max-hostgroup 100 172.16.0.0\/24"}
+{"input":"Maximum of 30 hosts per group in the 192.168.0.0\/24 network","output":"nmap --max-hostgroup 30 192.168.0.0\/24"}
+{"input":"Overcome the rate limit in example.com","output":"nmap --defeat-rst-ratelimit example.com"}
+{"input":"Avoid rate limits on target.com","output":"nmap --defeat-rst-ratelimit target.com"}
+{"input":"No resolution of DNS for example.com","output":"nmap -n example.com"}
+{"input":"No DNS resolution on target.com","output":"nmap -n target.com"}
+{"input":"Bypass DNS on server.local","output":"nmap -n server.local"}
+{"input":"DNS resolution force in example.com","output":"nmap -R example.com"}
+{"input":"Always resolve DNS on target.com","output":"nmap -R target.com"}
+{"input":"DNS servers 8.8.8.8 on server.local","output":"nmap --dns-servers 8.8.8.8 server.local"}
+{"input":"Use the DNS server 1.1.1.1 for example.com","output":"nmap --dns-servers 1.1.1.1 example.com"}
+{"input":"Custom DNS 8.8.8.8, 1.1.1.1 on target.com","output":"nmap --dns-servers 8.8.8.8,1.1.1.1 target.com"}
+{"input":"DNS system on server.local","output":"nmap --system-dns server.local"}
+{"input":"Use the system resolution in example.com","output":"nmap --system-dns example.com"}
+{"input":"Traceroute to target.com","output":"nmap --traceroute target.com"}
+{"input":"Includes traceroute on server.local","output":"nmap --traceroute server.local"}
+{"input":"Example route to example.com","output":"nmap --traceroute example.com"}
+{"input":"Without randomizing ports on target.com","output":"nmap -r target.com"}
+{"input":"Sequential port order on server.local","output":"nmap -r server.local"}
+{"input":"Don't randomize on example.com","output":"nmap -r example.com"}
+{"input":"Randomize hosts on target.com","output":"nmap --randomize-hosts target.com"}
+{"input":"Random order of hosts in the 192.168.1.0\/24 network","output":"nmap --randomize-hosts 192.168.1.0\/24"}
+{"input":"Data length 100 bytes on server.local","output":"nmap --data-length 100 server.local"}
