@@ -93,6 +93,13 @@ This agent executes model-generated strings directly in shell commands (`subproc
 
 This repo was forked from an upstream "PenMaster Security" project that assumed a single-machine setup: running directly on a Kali box, calling LM Studio for inference, and executing tools via a local Flask server (`mcp_server.py`) calling `subprocess` on that same machine. It has been fully retargeted (see `kali-network-model-0dv` and its children via `bd show`) to the distributed Ollama + SSH/docker-remote-exec topology described above; `agent_loop.py`/`mcp_server.py`/`memory.py` no longer exist in this repo. If you encounter a reference to any of them in an old comment, a beads issue, or a transcript under `exports/`, it's describing the pre-retarget architecture, not the current one.
 
+## Training-data pipeline
+
+`training-data/` is a separate, offline subsystem for building a qwen3:4b fine-tune corpus meant to teach the recon→exploit multi-turn escalation behavior the live agent struggles with (`kali-network-model-8jq`/`kali-network-model-c8h`) — it does not affect `agent.py`'s live `engage`/`recon` REPL commands at all. Full design (two export formats, the danger-level taxonomy, the three-way `recon_only`/`exploit_authorized`/`exploit_conditional` scope, the multi-machine farming workflow) is documented in `training-data/README.md`, not duplicated here. Key things worth knowing without reading that file in full:
+- `training-data/scripts/pipeline_chain_builder.py` (recipes generated from `pipeline_recipes.py`'s templates) is the harness that runs real tool chains against the lab to generate more training rows — gated by `CONFIG.ALLOW_FULL_PIPELINE_CHAINS` (`.env`, default `false`), which is a **separate flag from anything in `agent.py`** and never affects the live engagement path.
+- `training-data/scripts/make_farm_bundle.sh` packages a minimal standalone copy of this harness (not the full repo, not the committed dataset files) for running on other machines, each with its own `.env` and `pipeline_targets.json`.
+- Ollama host/model config (`OLLAMA_HOST`, `OLLAMA_NUM_CTX`) lives in `.env` only, same as the rest of this repo — `OLLAMA_NUM_CTX` is not just a warning heuristic, `agent.py`'s `call_model()` passes it as a live `options.num_ctx` override on every request too, so it must stay in sync with whatever `deploy/Modelfile`'s own `PARAMETER num_ctx` says.
+
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.

@@ -49,6 +49,8 @@ import os
 import random
 import re
 import sys
+from dotenv import load_dotenv
+
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from config import CONFIG, ConfigError  # noqa: E402
@@ -65,6 +67,7 @@ DEFAULT_OUT_PATH = os.path.join(HERE, "..", "pipeline_chains_generated.jsonl")
 # zero setup. See pipeline_targets.example.json.
 DEFAULT_TARGETS_FILE = os.path.join(HERE, "pipeline_targets.json")
 
+load_dotenv()
 
 def _goal_for_stage1(recipe):
     return f"Target: {recipe['target']}. Identify open ports and known vulnerabilities."
