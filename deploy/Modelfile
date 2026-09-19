@@ -35,9 +35,16 @@
 
 FROM /path/to/models/baronllm-llama3.1-v1-q6_k.gguf
 
-# Keep this in sync with OLLAMA_NUM_CTX in .env -- it's used there only for a
-# prompt-size warning heuristic, but the real ceiling is set here.
-PARAMETER num_ctx 4096
+# Keep this in sync with OLLAMA_NUM_CTX in .env -- agent.py's call_model()
+# passes OLLAMA_NUM_CTX as a live options.num_ctx override on every
+# request AND uses it for a prompt-size warning heuristic, so the two
+# should always match (this PARAMETER is what a bare `ollama run
+# pentest-agent` outside the agent would fall back to). Raised to 8192
+# (from 4096) since a multi-round attack-loop chain (agent.py's
+# run_attack_loop feeding back compressed prior-round output each round)
+# can exceed 4096 tokens well before MAX_ATTACK_ROUNDS -- confirmed
+# necessary in practice, not just headroom.
+PARAMETER num_ctx 8192
 
 # temperature 0.3 matches BaronLLM's own model card recommendation for
 # "deterministic reasoning tasks" -- conservative, but enough headroom for

@@ -20,8 +20,11 @@
 
 FROM /path/to/models/Llama-3.1-8B-kali-pentester.Q4_K_M.gguf
 
-PARAMETER num_ctx 4096
-# See deploy/Modelfile's comment on temperature -- kept in sync at 0.3.
+PARAMETER num_ctx 8192
+# See deploy/Modelfile's comment on num_ctx (agent.py's OLLAMA_NUM_CTX
+# applies as a live override regardless of which model OLLAMA_MODEL
+# points at, so both Modelfiles need to stay in sync) and on temperature
+# -- kept in sync at 0.3.
 PARAMETER temperature 0.3
 PARAMETER top_p 0.9
 PARAMETER stop "### Instruction:"
