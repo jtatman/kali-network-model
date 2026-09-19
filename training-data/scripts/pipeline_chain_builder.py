@@ -60,6 +60,10 @@ from pipeline_recipes import all_recipes  # noqa: E402
 
 HERE = os.path.dirname(__file__)
 DEFAULT_OUT_PATH = os.path.join(HERE, "..", "pipeline_chains_generated.jsonl")
+# Not committed (gitignored, like .env) -- each machine's own copy, absent
+# by default so the main checkout's docker-lab targets keep working with
+# zero setup. See pipeline_targets.example.json.
+DEFAULT_TARGETS_FILE = os.path.join(HERE, "pipeline_targets.json")
 
 
 def _goal_for_stage1(recipe):
@@ -187,12 +191,33 @@ def parse_args():
     p.add_argument("--verified-only", action="store_true")
     p.add_argument("--shuffle", action="store_true")
     p.add_argument("--out", type=str, default=DEFAULT_OUT_PATH)
+    p.add_argument(
+        "--targets-file", type=str, default=DEFAULT_TARGETS_FILE,
+        help=(
+            "JSON file mapping {template_id}__v{n} -> {field: override_value}, "
+            "applied before template substitution. Lets a per-machine copy "
+            "remap this repo's docker-lab IPs to whatever that machine can "
+            "actually reach, without editing pipeline_recipes.py. See "
+            "pipeline_targets.example.json."
+        ),
+    )
     return p.parse_args()
+
+
+def _load_target_overrides(path):
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        data = json.load(f)
+    return {k: v for k, v in data.items() if not k.startswith("_")}
 
 
 def main():
     args = parse_args()
-    recipes = all_recipes()
+    target_overrides = _load_target_overrides(args.targets_file)
+    if target_overrides:
+        print(f"Loaded {len(target_overrides)} target override(s) from {args.targets_file}")
+    recipes = all_recipes(target_overrides)
 
     if args.filter:
         recipes = [r for r in recipes if args.filter in r["template_id"]]

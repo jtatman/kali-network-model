@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy this to pipeline_targets.json (gitignored, per-machine) and fill in real values reachable from THIS machine. Any field present here overrides that field in the matching {template_id}__v{n} variation BEFORE template substitution -- so it lands in the actual generated command string, not just the label. Every entry below is optional; omit a recipe entirely to leave it pointed at this repo's own docker-lab defaults. Machine3 (EXEC_MODE=direct, no docker exec) especially needs these -- the 172.x.x.x docker-internal addresses baked into pipeline_recipes.py mean nothing on a bare-metal box's own network.",
+  "naabu_nuclei_pipe__v0": {"target": "10.0.0.50"},
+  "masscan_nmap_searchsploit_chain__v0": {"target": "10.0.0.0/24", "ports": "21,22,25,53,80,110,143,3306,8080", "rate": "1000"},
+  "httpx_nuclei_pipe__v0": {"target": "10.0.0.50", "port": "80"},
+  "nmap_vuln_script_searchsploit__v0": {"target": "10.0.0.50", "port": "80"},
+  "web_login_discovery_hydra_chain__v0": {"target": "10.0.0.60"}
+}

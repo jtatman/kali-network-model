@@ -241,29 +241,45 @@ def _substitute(obj, variables):
     return obj
 
 
-def expand_templates(templates):
+def expand_templates(templates, target_overrides=None):
     """Cross-products each template's stage_1/stage_2/condition_check
     against its own `variations` list, returning concrete recipes in the
     shape pipeline_chain_builder.run_recipe() expects
     ({"pathway", "target", "stage_1", "stage_2", "condition_check"}).
     `pathway` is `{template_id}__v{n}` so every concrete recipe has a
-    distinct, traceable name back to its template and variation index."""
+    distinct, traceable name back to its template and variation index.
+
+    `target_overrides` (keyed by that same `{template_id}__v{n}` pathway
+    name) lets a per-machine config replace a variation's values BEFORE
+    substitution -- e.g. this repo's docker-lab IPs (172.x.x.x) are
+    meaningless on a bare-metal networked Kali box's own network; that
+    machine's own `pipeline_targets.json` remaps them to whatever it can
+    actually reach. Applying the override after expansion (i.e. patching
+    the already-substituted command string) would silently leave the OLD
+    target baked into the text -- overrides must go into the variation
+    dict itself, before `_substitute` runs."""
+    target_overrides = target_overrides or {}
     recipes = []
     for template in templates:
         for i, variation in enumerate(template["variations"]):
+            pathway = f"{template['template_id']}__v{i}"
+            effective_variation = {**variation, **target_overrides.get(pathway, {})}
             recipe = {
-                "pathway": f"{template['template_id']}__v{i}",
+                "pathway": pathway,
                 "template_id": template["template_id"],
                 "verified": template["verified"],
-                "target": variation.get("target", ""),
-                "stage_1": _substitute(template["stage_1"], variation),
-                "stage_2": _substitute(template.get("stage_2", []), variation),
+                "target": effective_variation.get("target", ""),
+                "stage_1": _substitute(template["stage_1"], effective_variation),
+                "stage_2": _substitute(template.get("stage_2", []), effective_variation),
             }
             if template.get("condition_check"):
-                recipe["condition_check"] = _substitute(template["condition_check"], variation)
+                recipe["condition_check"] = _substitute(template["condition_check"], effective_variation)
             recipes.append(recipe)
     return recipes
 
 
-def all_recipes():
-    return expand_templates(SINGLE_STAGE_TEMPLATES) + expand_templates(TWO_STAGE_TEMPLATES)
+def all_recipes(target_overrides=None):
+    return (
+        expand_templates(SINGLE_STAGE_TEMPLATES, target_overrides)
+        + expand_templates(TWO_STAGE_TEMPLATES, target_overrides)
+    )

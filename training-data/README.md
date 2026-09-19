@@ -51,9 +51,9 @@ produced a real `command_failed` — kept in `pipeline_chains_generated.jsonl`
 for review, correctly excluded from the trusted merge.
 
 New CLI: `--list` (print candidates without running), `--limit N`,
-`--filter SUBSTRING`, `--verified-only`, `--shuffle`, `--out PATH`. The
-`--out`/`--shuffle` pair is the farming mechanism: point a different
-machine's `.env` at its own Kali target, run
+`--filter SUBSTRING`, `--verified-only`, `--shuffle`, `--out PATH`,
+`--targets-file PATH`. The `--out`/`--shuffle` pair is the farming
+mechanism: point a different machine's `.env` at its own Kali target, run
 `pipeline_chain_builder.py --shuffle --out machineN_output.jsonl` there
 independently, copy the output file back, then run
 `scripts/merge_pipeline_chain_outputs.py machineN_output.jsonl [...]`
@@ -61,6 +61,62 @@ once to dedupe everything into the canonical
 `pipeline_chains_generated.jsonl` — no need to labor over every step in
 one session when the same candidate list can run unattended on multiple
 machines in parallel.
+
+#### Running this on a genuinely separate machine
+
+Two problems with just cloning the whole repo everywhere: (1) each
+machine needs its own `.env` (different `EXEC_MODE`/`SSH_HOST`/target),
+and running several from one shared checkout means constantly
+re-exporting a different `.env` into the same shell; (2) the recipes'
+hardcoded `172.x.x.x` targets are this repo's own docker-lab addresses —
+meaningless on a different network.
+
+**Minimal standalone bundle** (`scripts/make_farm_bundle.sh`) — packages
+only what the harness actually needs to run: `config.py`, `tools.py`,
+`remote_exec.py`, `requirements.txt`/`pyproject.toml`, `.env.example`, and
+`training-data/scripts/{pipeline_chain_builder,pipeline_recipes,
+dataset_taxonomy,merge_pipeline_chain_outputs}.py` — deliberately NOT the
+committed dataset jsonl files or the merge/export scripts, which a
+farming machine never runs. Preserves the exact relative directory
+structure `pipeline_chain_builder.py`'s `sys.path` manipulation expects,
+so it runs standalone with zero code changes — confirmed by actually
+unpacking it into `/tmp` and running `--list`/`--filter` against a real
+override file this pass. Usage:
+
+```bash
+training-data/scripts/make_farm_bundle.sh pipeline-farm-bundle.tar.gz
+# on the target machine, in its own custom directory:
+tar xzf pipeline-farm-bundle.tar.gz -C /path/to/custom-dir && cd /path/to/custom-dir
+uv venv && uv pip install -r requirements.txt   # or pip install -r requirements.txt
+cp .env.example .env && vi .env                  # this machine's own config
+cp training-data/scripts/pipeline_targets.example.json training-data/scripts/pipeline_targets.json
+vi training-data/scripts/pipeline_targets.json    # remap targets to what THIS machine can reach
+set -a && source .env && set +a
+python3 training-data/scripts/pipeline_chain_builder.py --shuffle --out my_output.jsonl
+```
+Then copy `my_output.jsonl` back to the main checkout and run
+`merge_pipeline_chain_outputs.py my_output.jsonl`.
+
+**Target overrides** (`--targets-file`, default
+`training-data/scripts/pipeline_targets.json`, gitignored like `.env`) —
+a JSON file keyed by the same `{template_id}__v{n}` pathway name,
+`{"field": "override_value"}` per entry, merged into that variation's
+values BEFORE template substitution (applying it after substitution would
+leave the OLD target baked into the already-formatted command string, so
+this has to happen at the right layer — see `expand_templates()`'s
+docstring). Confirmed live this pass: overriding
+`naabu_nuclei_pipe__v0`'s target actually changes the printed/generated
+command, not just a label. `pipeline_targets.example.json` ships in the
+bundle as the template to copy and fill in.
+
+**Machine3 (the networked, non-Docker Kali box)** needs no code changes
+at all — `remote_exec.py`'s `EXEC_MODE=direct` path already SSHes
+straight to `SSH_USER@SSH_HOST` and runs the command on that box's own
+shell; `docker exec` only ever happens for `EXEC_MODE in ("docker",
+"local_docker")` (confirmed by reading `_build_remote_command`/`run()`).
+Just set `EXEC_MODE=direct`, `SSH_HOST`, `SSH_USER`, `SSH_KEY_PATH` in
+that machine's `.env` and a `pipeline_targets.json` pointing at real hosts
+on its own network.
 
 One rough edge from this refactor, not yet cleaned up: the two original
 hand-authored pathway names (`naabu_nuclei_pipe_live`,
