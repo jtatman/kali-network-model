@@ -10,14 +10,63 @@ Because this repo's purpose is offensive security tooling, treat any code change
 
 ## Running it
 
-No test suite exists. Runtime dependency: `requests` (see `requirements.txt`).
+No test suite exists. Runtime dependencies: `requests`, `python-dotenv` (see
+`pyproject.toml`/`uv.lock` — this repo uses `uv`, not bare `pip`; `requirements.txt`
+is kept in sync for reference but `uv` is the real dependency manager).
 
 ```bash
 cp .env.example .env   # fill in OLLAMA_HOST/OLLAMA_MODEL, EXEC_MODE, SSH_*/DOCKER_CONTAINER
-python3 agent.py
+uv sync                # creates/updates .venv from uv.lock
+.venv/bin/python3 agent.py
 ```
 
-`CONFIG.validate()` runs at startup and fails fast with a clear message if required env vars are missing — there is no partial/degraded startup mode.
+`config.py` auto-loads `.env` via `python-dotenv` (no manual `source .env` needed
+— confirmed this is genuinely automatic, not just documented as a good idea).
+`CONFIG.validate()` runs at startup and fails fast with a clear message if
+required env vars are missing — there is no partial/degraded startup mode.
+
+### Cold-start checklist (after this machine or session restarts)
+
+Three independent things need to be up before `agent.py`/`training-data/scripts/pipeline_chain_builder.py`
+will work; none of them start automatically on their own:
+
+1. **Ollama host** — a separate machine, not this one. Confirm it's reachable
+   and has the right model registered:
+   ```bash
+   curl -s http://<OLLAMA_HOST_IP>:11434/api/tags | grep pentest-agent
+   ```
+   If missing, re-register from `deploy/Modelfile` on that host (`ollama create
+   pentest-agent -f Modelfile`) — see that file's own comments for why BaronLLM
+   is the recommended base and how `OLLAMA_NUM_CTX` needs to stay in sync
+   between `.env` and the Modelfile's `PARAMETER num_ctx`.
+2. **Kali execution target** — whatever `EXEC_MODE`/`DOCKER_CONTAINER` (or
+   `SSH_HOST`) in `.env` currently point at. For the common
+   `EXEC_MODE=local_docker` case:
+   ```bash
+   docker ps --filter "name=$DOCKER_CONTAINER" --format "{{.Status}}"
+   # if not running:
+   docker start <container-name>
+   ```
+   Confirm the real tools this repo actually calls are present, not just that
+   the container is up (a fresh/rebuilt container needs all of these, see
+   `bd memories gotcha-kali-package-list-for-execution-target` for the full
+   apt list this project has confirmed necessary): `nmap masscan naabu nuclei
+   subfinder httpx-toolkit katana gobuster ffuf nikto hydra medusa ncrack
+   john sqlmap exploitdb enum4linux metasploit-framework dirb commix
+   seclists`.
+3. **This repo's own `.venv`** — `uv sync` if `.venv/` doesn't exist or looks
+   stale after a `pyproject.toml`/`uv.lock` change.
+
+The lab's own vulnerable-target containers (DVWA, WordPress, the anonymous-FTP
+lab, etc. — see `training-data/README.md` for which IPs the current recipes
+point at) are separate from all three of the above and have their own
+lifecycle; check `docker ps -a` for what's actually up before assuming a
+`training-data/scripts/pipeline_chain_builder.py` run will find its targets
+reachable. juice-shop (`bkimminich/juice-shop`) was removed from this lab's
+scope entirely (documented Node heap-exhaustion crashes under any real
+scan/fuzz load, and out of scope anyway per this project's current web-recon/
+OSINT/remote-vuln focus, not SNMP/SMTP/etc.) — do not re-add recipes targeting
+it without re-deciding that.
 
 REPL commands (typed at the `>>>` prompt):
 - `engage <target> [ports]` — full autonomous recon (nmap) then attack loop over every discovered port. Optional comma-separated `ports` restricts recon to an explicit list instead of a full 1-65535 sweep (deterministic path, no model call — see `run_full_engagement` in `agent.py`).

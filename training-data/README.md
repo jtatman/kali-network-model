@@ -528,11 +528,17 @@ actually be run against.
   system's "point a tool at a lab container" shape at all; it belongs in a
   different kind of example (checking the *execution target's own* state
   mid-engagement), not a pipeline-chain recipe.
-  **The lab has more untouched real services worth templating next**:
-  SNMP (172.25.0.4, public community string readable — but no
-  `run_snmpwalk`-equivalent tool exists in `SUPPORTED_TOOLS` at all yet,
-  a genuinely new-tool decision, not a recipe-writing one) and SMTP
-  (172.25.0.6, Postfix) are both live and completely unused by any recipe.
+  **Scope decision: SNMP/SMTP are OUT, not just "not yet templated."**
+  SNMP (172.25.0.4) and SMTP (172.25.0.6) were both confirmed live and
+  exploitable during this same investigation (SNMP's `public` community
+  string readable, SMTP a real Postfix instance), and were considered as
+  the next targeting expansion -- explicitly ruled out instead: this
+  project's current focus is web recon/OSINT/remote-vuln surface, and
+  neither the tooling depth nor the target diversity for SNMP/SMTP
+  justified the scope creep (no `run_snmpwalk`-equivalent tool even
+  exists in `SUPPORTED_TOOLS`, and adding one would be a new-tool
+  decision on top of a new-service decision). Do not add SNMP/SMTP
+  templates without re-opening this decision explicitly.
 - **Two new tools added, one rejected.** `run_dirb` (a second, independent
   directory-brute tool alongside `run_gobuster`/`run_ffuf`) and `run_commix`
   (OS command-injection exploitation, with real Metasploit integration via

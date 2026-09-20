@@ -12,7 +12,11 @@ full reasoning):
     - pipeline_chains_generated.jsonl (live-verified output of
       pipeline_chain_builder.py -- minus any stage_2_blocked_pending_override
       row, same reasoning as excluding reviewed==False below: an
-      incomplete/gated chain isn't ready to train on as-is)
+      incomplete/gated chain isn't ready to train on as-is; also minus any
+      stale_target_placeholder row -- syntax kept in the canonical file for
+      future reuse against a target that doesn't exist yet, e.g. rows still
+      referencing the removed juice-shop container, not something to train
+      on as if it were a currently-reachable target)
     - converted_baseline.jsonl       (1000)
     - converted_nmap_capped.jsonl    (100, capped by design -- see convert_nmap.py)
     - generated_pathways.jsonl       (62)
@@ -88,6 +92,7 @@ def main():
                 row.get("reviewed") is False
                 or row.get("stage_2_blocked_pending_override")
                 or row.get("stage_1_failed")
+                or row.get("stale_target_placeholder")
             ):
                 unreviewed_dropped[fname] = unreviewed_dropped.get(fname, 0) + 1
                 continue

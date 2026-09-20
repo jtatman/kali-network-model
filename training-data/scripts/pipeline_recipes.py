@@ -167,8 +167,7 @@ SINGLE_STAGE_TEMPLATES = [
     },
     {
         # User-supplied recipe, syntax CORRECTED before shipping (checked
-        # statically against real nmap -oG output, not run live yet --
-        # see verified=False below). Original used `grep Up |
+        # statically against real nmap -oG output). Original used `grep Up |
         # awk '{print $2}'`, which only extracts the IP by coincidence
         # when the host has no reverse-DNS name -- confirmed via a real
         # `nmap -oG -` run: a resolvable host produces
@@ -181,8 +180,19 @@ SINGLE_STAGE_TEMPLATES = [
         # masscan_nmap_searchsploit_chain template already uses) and pull
         # the IP out of the Host: field with sub(), which is
         # hostname-agnostic.
+        #
+        # Originally targeted juice-shop (172.17.0.13:3000) -- REMOVED
+        # per explicit decision: juice-shop's own documentation warns it
+        # can't absorb sustained automated-attack load without falling
+        # over (confirmed the hard way earlier this session: real OOM
+        # crashes even after doubling its heap), and a full
+        # fuzz-Bo0oM.txt wordlist run with -recursion is exactly that
+        # kind of load. LIVE-VERIFIED against the WordPress lab
+        # container (172.26.0.3) instead, unmodified syntax otherwise --
+        # ran clean, real 403s on .htaccess-family paths, no further
+        # fixes needed for this one.
         "template_id": "nmap_open_grep_xargs_ffuf",
-        "verified": False,
+        "verified": True,
         "stage_1": [
             {
                 "tool": "run_command",
@@ -197,51 +207,52 @@ SINGLE_STAGE_TEMPLATES = [
         ],
         "variations": [
             {
-                "target": "172.17.0.13", "port": "3000",
-                "wordlist": "/usr/share/wordlists/seclists/Fuzzing/fuzz-Bo0oM.txt",
+                "target": "172.26.0.3", "port": "80",
+                "wordlist": "/usr/share/seclists/Fuzzing/fuzz-Bo0oM.txt",
             },
         ],
     },
     {
-        # User-supplied recipe. LIVE-TESTED against 172.17.0.13:3000 and
-        # confirmed to need a real fix, found in two passes: this target
-        # answers HTTP 200 for ANY path (a Node/Express-style SPA
-        # catchall) at a fixed response length of 9393 bytes, which trips
-        # gobuster's own wildcard-response detector -- it aborts outright
-        # ("the server returns a status code that matches the provided
-        # options for non existing urls... Please exclude the response
-        # length or the status code or set the wildcard option"). First
-        # attempt added a `--wildcard` flag by analogy with other fuzzers
-        # (ffuf/wfuzz have filter-size options under different names) --
-        # WRONG, this gobuster version (checked via `gobuster dir --help`
-        # on the real container) has no such flag at all and fails with
-        # "flag provided but not defined: -wildcard". The tool's own
-        # error message already named the real remedy --
-        # `--exclude-length`, given the exact catchall byte count it
-        # measured. On a catchall target, most surviving hits will still
-        # be same-length false positives if the catchall length happens
-        # to shift per-path (rare but possible); genuinely useful hits
-        # are ones whose Content-Length differs from the catchall
-        # baseline, which the downstream curl -I step's header lets a
-        # human/model reviewer filter by post hoc. gobuster's own
-        # $1-column-is-the-path extraction was confirmed correct as-is.
+        # User-supplied recipe. Originally targeted juice-shop
+        # (172.17.0.13:3000) -- REMOVED per explicit decision: juice-
+        # shop's own documentation warns it can't absorb sustained
+        # automated-attack load without falling over (confirmed the hard
+        # way earlier this session: real OOM crashes under gobuster/dirb
+        # load even after doubling its heap), which is exactly the
+        # scenario this recipe's -t {threads} concurrency creates -- not
+        # a fit for this repo's purposes. Re-verified live against the
+        # WordPress lab container (172.26.0.3) instead, which found TWO
+        # further real bugs unrelated to the target swap: (1) the
+        # wordlist was rockyou.txt -- a PASSWORD list, not a path/content
+        # wordlist; gobuster dir's -w wants directory/file names, using a
+        # password list was always semantically wrong regardless of
+        # target, just not obviously so against juice-shop's own catchall
+        # behavior. Fixed to a real content-discovery wordlist. (2) this
+        # gobuster version's dir-mode output has NO leading slash on the
+        # path column ("admin", not "/admin" -- confirmed via a raw,
+        # unpiped run), so `{target}:{port}{{}}` silently glued the
+        # missing slash right into the port number
+        # ("172.26.0.3:80admin" -> curl's "Port number was not a decimal
+        # number" error on every single result). Fixed by adding the
+        # slash explicitly in the xargs step. WordPress has no catchall-
+        # 200 behavior (confirmed via a real 404 on a nonexistent path),
+        # so --exclude-length is no longer needed here at all.
         "template_id": "gobuster_dir_xargs_curl_head",
-        "verified": False,
+        "verified": True,
         "stage_1": [
             {
                 "tool": "run_command",
                 "command": (
                     "gobuster dir -u http://{target}:{port} -w {wordlist} -t {threads} "
-                    "--no-error -q --exclude-length {exclude_length} | awk '{{print $1}}' "
-                    "| xargs -I {{}} curl -I http://{target}:{port}{{}}"
+                    "--no-error -q | awk '{{print $1}}' "
+                    "| xargs -I {{}} curl -I http://{target}:{port}/{{}}"
                 ),
             },
         ],
         "variations": [
             {
-                "target": "172.17.0.13", "port": "3000", "threads": "50",
-                "wordlist": "/usr/share/wordlists/rockyou.txt",
-                "exclude_length": "9393",
+                "target": "172.26.0.3", "port": "80", "threads": "20",
+                "wordlist": "/usr/share/seclists/Discovery/Web-Content/common.txt",
             },
         ],
     },
@@ -263,8 +274,18 @@ SINGLE_STAGE_TEMPLATES = [
         # only the comma that separates it from the NEXT port on a
         # multi-port line. Dropped \t from the class; re-ran live and
         # confirmed a real Apache version string comes back correctly.
+        #
+        # Originally targeted juice-shop (172.17.0.13:3000) -- REMOVED
+        # per explicit decision (see nmap_open_grep_xargs_ffuf's own note
+        # above -- same reasoning). Re-verified live against DVWA
+        # (172.17.0.12:80, Apache 2.4.25) instead: the pipe correctly
+        # extracts the version string and hands it to searchsploit,
+        # which comes back with a real, honest "No Results" (this
+        # specific Apache build has no local exploit-db entries) -- a
+        # clean, successful lookup with nothing found is still a correct
+        # execution, not a failure.
         "template_id": "nmap_sV_grep_field_searchsploit",
-        "verified": False,
+        "verified": True,
         "stage_1": [
             {
                 "tool": "run_command",
@@ -277,7 +298,7 @@ SINGLE_STAGE_TEMPLATES = [
             },
         ],
         "variations": [
-            {"target": "172.17.0.13", "port": "3000"},
+            {"target": "172.17.0.12", "port": "80"},
         ],
     },
     {
@@ -329,14 +350,14 @@ SINGLE_STAGE_TEMPLATES = [
         # known real lead CLAUDE.md documents from earlier DVWA sessions)
         # -- dirb correctly recursed into found directories and correctly
         # skipped re-scanning ones already flagged listable, per its own
-        # WARNING output. NOTE: dirb was tried first against the
-        # juice-shop target (172.17.0.13:3000) and reliably crashed that
-        # specific container (a real target-side Node heap/stability
-        # issue under sustained brute-force request volume, confirmed via
-        # `docker logs` showing "JavaScript heap out of memory" --
-        # unrelated to dirb's own correctness) -- DVWA is the stable
-        # choice for this template until that target's own stability is
-        # addressed separately.
+        # WARNING output. NOTE: dirb was tried first against juice-shop
+        # (172.17.0.13:3000, since removed from the lab entirely -- see
+        # its own removal note on the sibling xargs recipes above) and
+        # reliably crashed that container (a real target-side Node heap/
+        # stability issue under sustained brute-force request volume,
+        # confirmed via `docker logs` showing "JavaScript heap out of
+        # memory" -- unrelated to dirb's own correctness). DVWA is the
+        # permanent choice for this template now, not a stopgap.
         "template_id": "dirb_recon",
         "verified": True,
         "stage_1": [
