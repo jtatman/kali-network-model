@@ -57,11 +57,24 @@ SINGLE_STAGE_TEMPLATES = [
             {"target": "172.17.0.12", "severity": "critical,high,medium", "template_path": "http/"},
             {"target": "172.17.0.12", "severity": "critical,high", "template_path": "http/exposures/"},
             {"target": "172.17.0.12", "severity": "critical,high,medium,low", "template_path": "http/misconfiguration/"},
-            {"target": "172.25.0.3", "severity": "critical,high,medium", "template_path": "http/"},
-            {"target": "172.25.0.4", "severity": "critical,high,medium", "template_path": "http/"},
-            {"target": "172.25.0.6", "severity": "critical,high,medium", "template_path": "http/"},
-            {"target": "172.26.0.3", "severity": "critical,high,medium", "template_path": "http/"},
-            {"target": "172.26.0.3", "severity": "critical,high,medium,low", "template_path": "http/exposures/"},
+            # v3: was 172.25.0.3 (the old compose stack's generic
+            # infosecwarrior/web:v2 server) -- retargeted to wp2shell
+            # (wordpress/CVE-2026-63030), same known-CVE model as every
+            # other WordPress-targeting recipe now. Needs a fresh
+            # `vulhub_lab.py up wordpress/CVE-2026-63030 --for-pathway
+            # naabu_nuclei_pipe__v3` before this default IP is trusted.
+            {"target": "172.27.0.3", "severity": "critical,high,medium", "template_path": "http/"},
+            # v4/v5 (were 172.25.0.4 SNMP, 172.25.0.6 SMTP) REMOVED
+            # outright, not retargeted -- SNMP/SMTP are out of scope
+            # entirely now (this project's current focus is web recon/
+            # OSINT/remote-vuln, see CLAUDE.md's cold-start note), and
+            # piping a non-HTTP service's ports into nuclei's `http/`
+            # templates was never a great fit for those targets anyway
+            # even when they were in scope.
+            # v4 (was v6): wp2shell again, a different nuclei template
+            # category (exposures/) than v3 for real variety on the
+            # same live target.
+            {"target": "172.27.0.3", "severity": "critical,high,medium,low", "template_path": "http/exposures/"},
         ],
     },
     {
@@ -82,10 +95,31 @@ SINGLE_STAGE_TEMPLATES = [
         ],
         "variations": [
             {"target": "172.17.0.12", "dast_category": "http"},
-            {"target": "172.26.0.3", "dast_category": "http"},
+            # v1: retargeted to wp2shell (wordpress/CVE-2026-63030), same
+            # reasoning as naabu_nuclei_pipe's own retarget above.
+            {"target": "172.27.0.3", "dast_category": "http"},
         ],
     },
     {
+        # Retargeted from the old always-on offensive-pentesting-lab
+        # docker-compose.yml's subnet ranges (172.25.0.2-.7,
+        # 172.26.0.2-.4, 172.23.0.0/24) -- that stack has been retired
+        # entirely in favor of vulhub_lab.py's on-demand, known-CVE model
+        # (see training-data/README.md). A blind subnet sweep was exactly
+        # the "shooting in the dark" pattern this pivot moved away from
+        # anyway -- each variation below now targets ONE specific,
+        # already-documented vulhub CVE environment instead, still
+        # exercising the same masscan -> nmap -> searchsploit massaging
+        # chain, just against a known single host/port rather than a
+        # range of unknowns. `target` here is a REAL but EPHEMERAL IP --
+        # vulhub containers get a fresh dynamic IP every time they're
+        # brought up (unlike the old compose stack's fixed addresses),
+        # so this baked-in default is only ever a placeholder for
+        # whichever IP was live when last verified; the actual live IP
+        # at farm-time comes from pipeline_targets.json, written by
+        # `vulhub_lab.py up <app>/<CVE> --for-pathway
+        # masscan_nmap_searchsploit_chain__vN`. Run that first, every
+        # time -- don't trust this default across a restart.
         "template_id": "masscan_nmap_searchsploit_chain",
         "verified": True,
         "stage_1": [
@@ -110,9 +144,35 @@ SINGLE_STAGE_TEMPLATES = [
             },
         ],
         "variations": [
-            {"target": "172.25.0.2-172.25.0.7", "ports": "21,22,25,53,80,110,143,3306,8080", "rate": "1000"},
-            {"target": "172.26.0.2-172.26.0.4", "ports": "21,22,80,3306,8080", "rate": "500"},
-            {"target": "172.23.0.0/24", "ports": "21,22,80,443,8080", "rate": "500"},
+            # v0: tomcat/CVE-2017-12615 (PUT-method RCE). LIVE-VERIFIED
+            # end to end through this exact chain: real "Apache Tomcat
+            # 8.5.19" banner extracted, and searchsploit correctly
+            # returned 2 real matching entries (42966.py, 42953.txt --
+            # both genuinely cover "< 9.0.1 (Beta) / < 8.5.23", which
+            # 8.5.19 falls within).
+            {"target": "172.27.0.2", "ports": "8080", "rate": "200"},
+            # v1: php/CVE-2019-11043 (PHP-FPM RCE via nginx). LIVE-
+            # VERIFIED -- target the nginx front-end container
+            # specifically (not php-fpm's own IP), matching the "which
+            # container" choice --for-pathway/--container needs when
+            # bringing this environment up. Real banner extracted
+            # ("nginx 1.31.6"), searchsploit correctly returned NO
+            # results -- an honest negative, not a bug: the actual CVE
+            # lives in PHP-FPM's own request parsing, invisible to a
+            # version-banner grab against nginx itself (nmap never talks
+            # to php-fpm directly over the network at all).
+            {"target": "172.27.0.3", "ports": "80", "rate": "200"},
+            # v2: struts2/s2-045 (the Equifax CVE, CVE-2017-5638). LIVE-
+            # VERIFIED -- real banner extracted was "Jetty 9.2.11.v20150529"
+            # (this vulhub image bundles Struts2 on an embedded Jetty
+            # servlet container, NOT Tomcat -- corrected from an earlier,
+            # wrong assumption in this same comment before actually
+            # running it), searchsploit correctly returned NO results --
+            # same honest-negative reasoning as v1: the exploitable bug is
+            # in Struts2's Jakarta Multipart parser, not in Jetty's own
+            # version, so a bare banner lookup against Jetty was never
+            # going to surface it.
+            {"target": "172.27.0.2", "ports": "8080", "rate": "200"},
         ],
     },
     {
@@ -133,8 +193,12 @@ SINGLE_STAGE_TEMPLATES = [
         ],
         "variations": [
             {"target": "172.17.0.12", "port": "80", "severity": "critical,high,medium", "template_path": "http/"},
-            {"target": "172.26.0.3", "port": "80", "severity": "critical,high,medium", "template_path": "http/"},
-            {"target": "172.25.0.4", "port": "8080", "severity": "critical,high,medium", "template_path": "http/"},
+            # v1: retargeted to wp2shell (wordpress/CVE-2026-63030).
+            {"target": "172.27.0.3", "port": "80", "severity": "critical,high,medium", "template_path": "http/"},
+            # v2 (was 172.25.0.4, an SNMP-lab container's unrelated
+            # bonus web port) REMOVED outright, not retargeted -- SNMP
+            # is out of scope entirely now (see naabu_nuclei_pipe's own
+            # note above, same reasoning).
         ],
     },
     {
@@ -161,8 +225,12 @@ SINGLE_STAGE_TEMPLATES = [
         ],
         "variations": [
             {"target": "172.17.0.12", "port": "80"},
-            {"target": "172.26.0.3", "port": "80"},
-            {"target": "172.25.0.3", "port": "80"},
+            # v1/v2: both retargeted to wp2shell (wordpress/CVE-2026-63030)
+            # -- v2 was the old compose stack's generic infosecwarrior/
+            # web:v2 server (172.25.0.3), same retarget reasoning as the
+            # other now-generic-web-pointed variations above.
+            {"target": "172.27.0.3", "port": "80"},
+            {"target": "172.27.0.3", "port": "80"},
         ],
     },
     {
@@ -579,7 +647,22 @@ TWO_STAGE_TEMPLATES = [
         # an intentionally-open anonymous account accepts anything,
         # which is itself the actual finding a real engagement would
         # report (not "we brute-forced FTP").
+        # RETIRED: 172.25.0.2 was part of the offensive-pentesting-lab
+        # docker-compose.yml stack, which has been retired entirely in
+        # favor of vulhub_lab.py's on-demand, known-CVE model (see
+        # training-data/README.md). vulhub has NO equivalent -- it is a
+        # per-CVE catalog (specific software vulnerabilities), not a
+        # misconfiguration-lab catalog, and anonymous FTP access is a
+        # config weakness, not a CVE; confirmed by searching the full
+        # vulhub tree for any ftp/vsftpd/proftpd directory at all (none
+        # exist). This recipe's logic and its real, live-verified
+        # findings from earlier this session (see the comment below)
+        # are still correct -- there's simply nowhere to run it against
+        # right now. Un-retire by pointing `variations` at a real
+        # anonymous-FTP-enabled host again (e.g. if brought back on a
+        # separate personal-network lab) and removing `retired`.
         "template_id": "ftp_anon_medusa_chain",
+        "retired": True,
         "verified": True,
         "condition_check": "Anonymous FTP login allowed",
         "stage_1": [
@@ -616,7 +699,11 @@ TWO_STAGE_TEMPLATES = [
         # real run_ncrack dispatch (not just the bare ncrack CLI) --
         # confirmed real output: "Discovered credentials for ftp on
         # 172.25.0.2 21/tcp: 'anonymous' 'root'".
+        # RETIRED: same reason as ftp_anon_medusa_chain's own note above
+        # -- no vulhub equivalent for a misconfiguration-class finding
+        # (vulhub is CVE-specific), and 172.25.0.2 no longer exists.
         "template_id": "ftp_anon_ncrack_chain",
+        "retired": True,
         "verified": True,
         "condition_check": "Anonymous FTP login allowed",
         "stage_1": [
@@ -668,6 +755,17 @@ def expand_templates(templates, target_overrides=None):
     target_overrides = target_overrides or {}
     recipes = []
     for template in templates:
+        if template.get("retired"):
+            # Excluded from the default candidate pool entirely -- kept
+            # in this file, not deleted, because the LOGIC is still
+            # real/correct, only the target went away (see the
+            # template's own comment for why). Running it as-is would
+            # just fail loudly against a target that no longer exists,
+            # which is wasted cycles, not useful negative signal --
+            # unlike a genuine stage_1_failed/stage_2_blocked row, this
+            # was never actually attempted. Re-point `variations` at a
+            # real target and remove this flag to bring it back.
+            continue
         for i, variation in enumerate(template["variations"]):
             pathway = f"{template['template_id']}__v{i}"
             effective_variation = {**variation, **target_overrides.get(pathway, {})}

@@ -487,6 +487,102 @@ actually be run against.
   — the ChatML/general-purpose export of the same merged rows, with
   danger-level/safeguard tags and verified-vs-independent turn threading.
 
+## The vulhub pivot: on-demand known-CVE targets, not an always-on lab stack
+
+The lab targets moved from an always-on `docker-compose.yml` stack
+(`~/Offensive-Pentesting-Lab/docker-compose.yml` -- infosecwarrior FTP/web/
+mysql/snmp/smtp, a WordPress+db pair, a few vulhub images wired in by hand)
+to `training-data/scripts/vulhub_lab.py`, an on-demand launcher for
+vulhub's 333 per-CVE `docker-compose.yml` environments (a git clone at
+`~/Offensive-Pentesting-Lab/vulhub`, override the path via `VULHUB_ROOT`).
+Two real problems drove this:
+
+1. **Resources.** The always-on stack plus repeated vulhub image builds
+   left Docker holding 108GB of images / 47.9GB of reclaimable build cache
+   at the time of the pivot (`docker builder prune -f` recovered 7GB of
+   that safely; the remaining ~49GB is images, left alone since some may
+   belong to unrelated projects on the same machine).
+2. **"Shooting in the dark."** The old stack's tool-testing had no ground
+   truth -- recipes ran against whatever happened to be listening, with no
+   documented expected finding to check output against. Every vulhub CVE
+   directory ships a real README describing the exact vulnerability, so
+   `vulhub_lab.py info <app>/<CVE>` gives an actual baseline to verify a
+   tool's output against, not just "did it run without erroring."
+
+**Usage**: `vulhub_lab.py list [filter]` / `info <app>/<CVE>` / `up
+<app>/<CVE> [--for-pathway PATHWAY[,...]] [--container NAME]` / `down
+<app>/<CVE>` / `down --all` / `status`. Bring up exactly one (or a few,
+deliberately) at a time -- this is the resource-saving model the tool was
+built around, not a limitation to work around. `up` handles a real gotcha
+automatically: `DOCKER_CONTAINER` (from `.env`) is explicitly attached to
+several existing lab networks by hand (confirmed via `docker inspect`) --
+it is NOT simply "on the default bridge and can reach everything." Every
+new vulhub CVE directory creates its own isolated project network with
+zero route to it otherwise; `up` discovers the real network(s) via `docker
+inspect` (never guessed from compose's project-name-mangling rules) and
+connects `DOCKER_CONTAINER` to each one. `down` disconnects it FIRST --
+confirmed live that skipping this leaves compose's own network-removal
+step failing silently ("Resource is still in use") and an orphaned network
+behind forever.
+
+**The dynamic-IP bridge**: vulhub containers get a fresh IP every time
+they're brought up, unlike the old stack's fixed addresses. `up
+... --for-pathway PATHWAY[,...]` writes that real, current IP straight
+into `pipeline_targets.json` (the same per-machine target-override
+mechanism farming already used) -- `pipeline_recipes.py`'s own baked-in
+`target` defaults are now only ever placeholders from whenever a recipe
+was last verified, never trust them across a restart. Run `vulhub_lab.py
+up` again and re-check `pipeline_targets.json` before assuming any recipe's
+target is actually live.
+
+**What replaced what** (all live-verified this session, not just wired up):
+- WordPress-targeting recipes (`katana_crawl_wordpress`, `ffuf_wordpress_fuzz`,
+  `gobuster_dir_xargs_curl_head`, `nmap_open_grep_xargs_ffuf`,
+  `web_login_discovery_hydra_chain__v0`, plus several `naabu_nuclei_pipe`/
+  `httpx_nuclei_pipe`/`nmap_vuln_script_searchsploit`/`naabu_nuclei_pipe_dast`
+  variations that used to point at the old stack's generic web server or
+  WordPress container) → `wordpress/CVE-2026-63030` ("wp2shell" -- confirmed
+  via matching site title AND identical `vulhub/wordpress:6.9.4` image tag
+  that this is likely the SAME underlying environment the old stack's `web2`
+  service was already running, just launched properly now).
+- `masscan_nmap_searchsploit_chain`'s 3 variations, previously blind subnet
+  sweeps (`172.25.0.2-.7`, `172.26.0.2-.4`, `172.23.0.0/24`) → 3 single
+  known hosts: `tomcat/CVE-2017-12615` (real Apache Tomcat 8.5.19 banner,
+  searchsploit correctly found 2 real matching exploit-db entries),
+  `php/CVE-2019-11043` (real nginx 1.31.6 banner, searchsploit correctly
+  found NO results -- an honest negative, the actual CVE is in PHP-FPM's
+  request parsing, invisible to a banner grab against nginx), `struts2/s2-045`
+  (real Jetty 9.2.11.v20150529 banner -- this vulhub image bundles Struts2
+  on embedded Jetty, not Tomcat; corrected after actually running it, not
+  assumed -- searchsploit correctly found NO results, same honest-negative
+  reasoning). A blind multi-host sweep was exactly the "shooting in the
+  dark" pattern this whole pivot exists to move away from, so these were
+  retargeted to single known hosts rather than preserved as ranges.
+- SNMP/SMTP-targeting variations (parts of `naabu_nuclei_pipe`/
+  `httpx_nuclei_pipe`) were REMOVED outright, not retargeted -- see Known
+  Gaps below, SNMP/SMTP are out of scope entirely now, and vulhub has no
+  non-web-app catalog to replace them with anyway.
+- `ftp_anon_medusa_chain`/`ftp_anon_ncrack_chain` are RETIRED (a `retired:
+  True` flag on the template, excluded from `all_recipes()` by default,
+  logic kept in the file rather than deleted) -- vulhub is a per-CVE
+  software-vulnerability catalog, not a misconfiguration-lab catalog, and
+  anonymous FTP access is a config weakness, not a CVE (confirmed: no
+  ftp/vsftpd/proftpd directory exists anywhere in vulhub). Un-retire by
+  pointing `variations` at a real anonymous-FTP host again if one comes
+  back (e.g. on a separate personal-network lab).
+- `dvwa_commix_exec_chain`/`dirb_recon`/`nmap_sV_grep_field_searchsploit`/
+  `nmap_sV_multiport_field_searchsploit`/`web_login_discovery_hydra_chain__v1`/
+  several `naabu_nuclei_pipe`/`httpx_nuclei_pipe`/`nmap_vuln_script_searchsploit`
+  variations all target DVWA, which is untouched by the vulhub pivot itself
+  (it's a standalone `docker run` container, not part of the retired compose
+  stack) -- but its IP moved (`172.17.0.12` → `172.17.0.2`) after an
+  unrelated restart during this same session, and its database needed
+  re-initializing (see `bd memories gotcha-dvwa-needs-setup-after-restart`)
+  before login worked at all. Both are now reflected via `pipeline_targets.json`
+  the same way as the vulhub targets -- DVWA's IP isn't actually any more
+  stable than a vulhub container's, it just happens to persist across a
+  single uptime period rather than every relaunch.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training
@@ -509,19 +605,26 @@ actually be run against.
   reporting a real ceiling, not a bug. Fixed by adding 4 new templates
   targeting tools/services that had literally never been touched:
   `katana_crawl_wordpress`/`ffuf_wordpress_fuzz` (recon, against the
-  WordPress lab container, 172.26.0.3 — found real leads: `/xmlrpc.php?rsd`,
+  then-live WordPress lab container — found real leads: `/xmlrpc.php?rsd`,
   `/author/admin/` username enumeration, `readme.html`/`license.txt`
-  version fingerprinting) and `ftp_anon_medusa_chain`/`ftp_anon_ncrack_chain`
-  (exploit_conditional, against the lab's real anonymous-FTP container,
-  172.25.0.2 — gated on nmap's `ftp-anon` NSE script real output
-  "Anonymous FTP login allowed", not a blanket override; both credential
-  tools correctly report every password as a hit against the intentionally-
-  open `anonymous` account, which is itself the real finding, not "we
-  cracked a password"). All 4 are `verified: True`, live-tested end to end
-  through the real `pipeline_chain_builder.py` harness (not just the bare
-  CLI tools standalone). This closes 3 of the 4 previously-zero-coverage
-  tools (`run_ncrack`, `run_medusa`, `run_katana`; `run_ffuf` already had
-  partial coverage). `run_netstat` remains a genuine, permanent gap — it
+  version fingerprinting; retargeted to `wordpress/CVE-2026-63030` under
+  the vulhub pivot above, same tools, same finding shape) and
+  `ftp_anon_medusa_chain`/`ftp_anon_ncrack_chain` (exploit_conditional,
+  against the lab's then-live anonymous-FTP container — gated on nmap's
+  `ftp-anon` NSE script real output "Anonymous FTP login allowed", not a
+  blanket override; both credential tools correctly reported every
+  password as a hit against the intentionally-open `anonymous` account,
+  which was itself the real finding, not "we cracked a password"; now
+  RETIRED, see the vulhub pivot section above — no vulhub equivalent
+  exists for a misconfiguration-class finding). All 4 were `verified: True`
+  and live-tested end to end through the real `pipeline_chain_builder.py`
+  harness at the time (not just the bare CLI tools standalone). This
+  closed 3 of the 4 previously-zero-coverage tools (`run_ncrack`,
+  `run_medusa`, `run_katana`; `run_ffuf` already had partial coverage) --
+  `run_medusa`/`run_ncrack` lost their only live example again when
+  `ftp_anon_*` retired, a real coverage regression worth tracking if a
+  misconfiguration-lab target ever comes back. `run_netstat` remains a
+  genuine, permanent gap — it
   has no `target` param at all (`tools.py`'s `_run_netstat` runs
   `netstat`/`ss` on whatever host is executing the command, i.e. the Kali
   box itself, not a remote lab target), so it doesn't fit this recipe

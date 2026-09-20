@@ -57,16 +57,30 @@ will work; none of them start automatically on their own:
 3. **This repo's own `.venv`** — `uv sync` if `.venv/` doesn't exist or looks
    stale after a `pyproject.toml`/`uv.lock` change.
 
-The lab's own vulnerable-target containers (DVWA, WordPress, the anonymous-FTP
-lab, etc. — see `training-data/README.md` for which IPs the current recipes
-point at) are separate from all three of the above and have their own
-lifecycle; check `docker ps -a` for what's actually up before assuming a
+The lab's vulnerable-target containers are separate from all three of the
+above and have their own lifecycle -- check what's actually up (`docker ps -a`,
+`training-data/scripts/vulhub_lab.py status`) before assuming a
 `training-data/scripts/pipeline_chain_builder.py` run will find its targets
-reachable. juice-shop (`bkimminich/juice-shop`) was removed from this lab's
-scope entirely (documented Node heap-exhaustion crashes under any real
-scan/fuzz load, and out of scope anyway per this project's current web-recon/
-OSINT/remote-vuln focus, not SNMP/SMTP/etc.) — do not re-add recipes targeting
-it without re-deciding that.
+reachable:
+- **DVWA** — a standalone `docker run` container (not compose-managed).
+  Confirm it's up and its database is initialized (see the Training-data
+  pipeline section's own DVWA note above) before trusting any DVWA-targeting
+  recipe.
+- **Everything else** (WordPress/wp2shell, tomcat, php, struts2, ...) — a
+  vulhub CVE environment, brought up on demand via
+  `training-data/scripts/vulhub_lab.py up <app>/<CVE> --for-pathway <pathway>`.
+  Nothing is running by default; bring up exactly what you need, verify it,
+  tear it down when done (`down <app>/<CVE>` or `down --all`) — this is the
+  resource-saving model this whole workflow was redesigned around, not an
+  oversight to work around.
+- The old always-on `~/Offensive-Pentesting-Lab/docker-compose.yml` stack
+  (infosecwarrior FTP/web/mysql/snmp/smtp, a WordPress+db pair, a few vulhub
+  entries wired in by hand) and juice-shop (`bkimminich/juice-shop`, removed
+  earlier for documented Node heap-exhaustion crashes under real scan/fuzz
+  load) are both retired from this project's use entirely — don't re-add
+  recipes targeting either without re-opening that decision. SNMP/SMTP are
+  out of scope too, independent of any specific container (this project's
+  focus is web recon/OSINT/remote-vuln).
 
 REPL commands (typed at the `>>>` prompt):
 - `engage <target> [ports]` — full autonomous recon (nmap) then attack loop over every discovered port. Optional comma-separated `ports` restricts recon to an explicit list instead of a full 1-65535 sweep (deterministic path, no model call — see `run_full_engagement` in `agent.py`).
@@ -148,6 +162,8 @@ This repo was forked from an upstream "PenMaster Security" project that assumed 
 - `training-data/scripts/pipeline_chain_builder.py` (recipes generated from `pipeline_recipes.py`'s templates) is the harness that runs real tool chains against the lab to generate more training rows — gated by `CONFIG.ALLOW_FULL_PIPELINE_CHAINS` (`.env`, default `false`), which is a **separate flag from anything in `agent.py`** and never affects the live engagement path.
 - `training-data/scripts/make_farm_bundle.sh` packages a minimal standalone copy of this harness (not the full repo, not the committed dataset files) for running on other machines, each with its own `.env` and `pipeline_targets.json`.
 - Ollama host/model config (`OLLAMA_HOST`, `OLLAMA_NUM_CTX`) lives in `.env` only, same as the rest of this repo — `OLLAMA_NUM_CTX` is not just a warning heuristic, `agent.py`'s `call_model()` passes it as a live `options.num_ctx` override on every request too, so it must stay in sync with whatever `deploy/Modelfile`'s own `PARAMETER num_ctx` says.
+- **The lab targets are now vulhub CVE environments, brought up on demand, not an always-on compose stack.** `training-data/scripts/vulhub_lab.py` (`list`/`info`/`up`/`down`/`status`) starts exactly one (or a few, deliberately) of vulhub's 333 per-CVE `docker-compose.yml` environments at a time against a real, documented CVE — replacing the old always-on `~/Offensive-Pentesting-Lab/docker-compose.yml` stack entirely (that file still exists on disk but is retired from this project's use; a real resource problem, 108GB of images/47.9GB reclaimable build cache, was the direct reason for this pivot). `up` handles a real gotcha automatically: every vulhub CVE directory creates its OWN new, isolated docker network that `DOCKER_CONTAINER` (from `.env`) has zero route to until explicitly connected — `up` discovers and connects it, `down` disconnects it first (compose's own network teardown silently fails and leaks an orphaned network otherwise, confirmed live). Because vulhub containers get a **fresh, dynamic IP every time they're brought up** (unlike the old compose stack's fixed addresses), `pipeline_recipes.py`'s own baked-in `target` values in `variations` are only ever placeholders from whenever they were last verified — the real, current IP always comes from `training-data/scripts/pipeline_targets.json`, written automatically by `vulhub_lab.py up ... --for-pathway <pathway>`. Run that before trusting any recipe's target is actually live. SNMP/SMTP were explicitly dropped from scope during this same pivot (confirmed live and exploitable, ruled out anyway — this project's focus is web recon/OSINT/remote-vuln); don't re-add them without re-opening that decision.
+- **DVWA is a separate, standalone `docker run` container, not part of any compose file** — its IP is NOT stable across restarts (confirmed: moved from `172.17.0.12` to `172.17.0.2` after one restart), and its database does NOT auto-initialize on a fresh container (confirmed: login silently redirects to `setup.php` forever until you POST `create_db=Create+%2F+Reset+Database` to it once, with a matching CSRF token from the SAME cookie jar/session). See `bd memories gotcha-dvwa-needs-setup-after-restart` for the exact fix. Treat DVWA's IP the same as any vulhub target: check it's real and current via `pipeline_targets.json`, don't trust `pipeline_recipes.py`'s baked-in default across a restart.
 
 ## Beads Issue Tracker
 

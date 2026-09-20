@@ -9,6 +9,7 @@ reports/
 agent.log
 .env
 training-data/scripts/pipeline_targets.json
+training-data/scripts/.vulhub_lab_state.json
 .cache/
 *backup*.py
 resume.sh
