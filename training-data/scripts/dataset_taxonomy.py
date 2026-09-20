@@ -47,7 +47,7 @@ _LEVEL1_TOOLS = {
     "run_nikto", "run_gobuster", "run_enum4linux", "run_subfinder",
     "run_nuclei", "run_katana", "run_ffuf", "run_httpx", "run_searchsploit",
 }
-_LEVEL3_TOOLS = {"run_hydra", "run_john", "run_ncrack", "run_medusa", "run_setoolkit"}
+_LEVEL3_TOOLS = {"run_hydra", "run_john", "run_ncrack", "run_medusa", "run_setoolkit", "run_commix"}
 
 # Payload/flag markers that push a normally-benign tool (run_curl, run_sqlmap,
 # run_command, run_metasploit) up to level 3. Matched against the
@@ -73,7 +73,7 @@ _EXPLOIT_MARKER_RE = re.compile(
 # already builds), not just the structured tool name.
 _EXPLOIT_TOOL_NAME_RE = re.compile(
     r"\b(hydra|medusa|ncrack|john|mimikatz|aircrack-ng|aireplay-ng|"
-    r"setoolkit|msfconsole|msfvenom)\b",
+    r"setoolkit|msfconsole|msfvenom|commix)\b",
     re.IGNORECASE,
 )
 

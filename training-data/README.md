@@ -489,22 +489,99 @@ actually be run against.
 
 ## Known gaps
 
-- **Severe tool-usage imbalance, confirmed by a live evaluation pass this
-  session.** `run_command` accounts for 1012/1192 chain steps (85%);
-  `run_nmap` is next at 110; everything else is single digits. 9 of the 25
-  `SUPPORTED_TOOLS` have zero *structured* examples (`run_masscan`,
-  `run_naabu`, `run_netstat`, `run_nikto`, `read_file`, `run_ncrack`,
-  `run_medusa`, `run_setoolkit`, `run_katana`), and 4 of those
-  (`run_netstat`, `run_ncrack`, `run_medusa`, `run_katana`) have **zero
-  representation anywhere**, including as raw `run_command` text. A
-  fine-tune on this corpus as-is won't see real examples of those tools.
-  Still true after this pass — the new templates use structured
-  `run_gobuster`/`run_hydra`/`run_sqlmap` calls where they're gated behind
-  `stage_2`/the override (not yet run live), but everything that's
-  actually landed in the corpus so far is still `run_command` shell pipes
-  (masscan/naabu/httpx/nuclei/nmap chains). Prioritize `run_netstat`/
-  `run_ncrack`/`run_medusa`/`run_katana` specifically when adding new
-  templates.
+- **Severe tool-usage imbalance in the CORPUS (the merged/exported training
+  data), confirmed by a live evaluation pass earlier this session — the
+  recipe-generation SIDE of this is now fixed, see below.** `run_command`
+  accounts for 1012/1192 chain steps (85%) of what's actually merged and
+  exported so far; `run_nmap` is next at 110; everything else is single
+  digits. That's a statement about `combined_scripts_format.jsonl`/
+  `combined_chatml_format.jsonl` today, not about what recipes exist to
+  generate more — closing THAT gap needs actually farming these new
+  recipes and running `merge_pipeline_chain_outputs.py` +
+  `merge_scripts_format.py`, not just writing templates.
+- **The 27→31 recipe fix: real breadth was structurally capped, not a
+  farming problem.** Running `pipeline_chain_builder.py` across 3 machines
+  repeatedly produced 319 raw rows that deduped down to only 27 distinct
+  `(pathway, chain)` pairs — every machine was drawing from the exact same
+  fixed 27-candidate pool (13 templates × their own small `variations`
+  lists), so more machines/more runs could never produce more than 27
+  distinct outcomes; the dedup script did its job correctly, it was
+  reporting a real ceiling, not a bug. Fixed by adding 4 new templates
+  targeting tools/services that had literally never been touched:
+  `katana_crawl_wordpress`/`ffuf_wordpress_fuzz` (recon, against the
+  WordPress lab container, 172.26.0.3 — found real leads: `/xmlrpc.php?rsd`,
+  `/author/admin/` username enumeration, `readme.html`/`license.txt`
+  version fingerprinting) and `ftp_anon_medusa_chain`/`ftp_anon_ncrack_chain`
+  (exploit_conditional, against the lab's real anonymous-FTP container,
+  172.25.0.2 — gated on nmap's `ftp-anon` NSE script real output
+  "Anonymous FTP login allowed", not a blanket override; both credential
+  tools correctly report every password as a hit against the intentionally-
+  open `anonymous` account, which is itself the real finding, not "we
+  cracked a password"). All 4 are `verified: True`, live-tested end to end
+  through the real `pipeline_chain_builder.py` harness (not just the bare
+  CLI tools standalone). This closes 3 of the 4 previously-zero-coverage
+  tools (`run_ncrack`, `run_medusa`, `run_katana`; `run_ffuf` already had
+  partial coverage). `run_netstat` remains a genuine, permanent gap — it
+  has no `target` param at all (`tools.py`'s `_run_netstat` runs
+  `netstat`/`ss` on whatever host is executing the command, i.e. the Kali
+  box itself, not a remote lab target), so it doesn't fit this recipe
+  system's "point a tool at a lab container" shape at all; it belongs in a
+  different kind of example (checking the *execution target's own* state
+  mid-engagement), not a pipeline-chain recipe.
+  **The lab has more untouched real services worth templating next**:
+  SNMP (172.25.0.4, public community string readable — but no
+  `run_snmpwalk`-equivalent tool exists in `SUPPORTED_TOOLS` at all yet,
+  a genuinely new-tool decision, not a recipe-writing one) and SMTP
+  (172.25.0.6, Postfix) are both live and completely unused by any recipe.
+- **Two new tools added, one rejected.** `run_dirb` (a second, independent
+  directory-brute tool alongside `run_gobuster`/`run_ffuf`) and `run_commix`
+  (OS command-injection exploitation, with real Metasploit integration via
+  `--msf-path`) are now real `SUPPORTED_TOOLS` with structured params —
+  `dirb_recon` and `dvwa_commix_exec_chain` are the first real recipes using
+  them. DirBuster (the actual Java/Swing tool, as distinct from `dirb`) was
+  tried first and rejected: its headless mode throws a real
+  `NullPointerException` on startup in the Kali package (confirmed
+  reproducible twice, `Manager.start()` unconditionally touches a GUI panel
+  object never initialized headless) — a real upstream bug in an
+  unmaintained tool, not a flag issue, so it's not wired up at all rather
+  than shipping something that can't run. `run_commix` needed two real
+  fixes found live, both baked into `tools.py`'s `_run_commix` itself: (1)
+  `--ignore-stdin` — commix checks `sys.stdin.isatty()` at startup and,
+  under ANY non-interactive invocation (every docker-exec/SSH call this
+  harness ever makes), silently switches into bulk-stdin target-parsing
+  mode and ignores `-u` entirely, with no error; (2)
+  `--answers='shell=N,random=Y,use the URL=Y,Insufficient=Y'` — after a
+  confirmed injection, commix asks several interactive follow-up questions
+  (spawn a shell? use a random output file? fall back to `/tmp/`?) that
+  `--batch` does NOT suppress, and the shell-spawn prompt's default flips
+  to Y once `--ignore-stdin` is set — confirmed to hang FOREVER retrying
+  an EOF read against non-interactive stdin without the explicit answers.
+  `dvwa_commix_exec_chain` is `verified: True`, confirmed via 5 consecutive
+  clean live runs (including 2 launched concurrently, and the final run
+  using the literal command string `_run_commix()` generates, not a
+  hand-typed copy) with real RCE each time (`id`/`whoami` against DVWA's
+  command-injection module). An intermediate debugging detour is worth
+  keeping in mind: 2 of the first 5 attempts against this exact
+  target/param failed, which briefly looked exactly like "commix's own
+  detection is non-deterministic" — it wasn't. The real cause was a bug in
+  the recipe's OWN login/cookie-capture logic (an earlier version did a
+  plain anonymous GET for the CSRF token, then a separate login POST with
+  no cookie jar at all, relying on DVWA happening to mint a fresh session
+  on that POST) — DVWA's CSRF check only validates when the SAME session
+  from the initial GET is carried into the login POST, so the flawed
+  version's login intermittently redirected back to `login.php` (failure)
+  instead of `index.php` (success), and commix spent the whole run testing
+  an unauthenticated page that was never going to be injectable. Fixed by
+  using one persistent cookie jar across both curl calls. A SEPARATE real
+  bug was found and fixed in the `--answers` string itself along the way:
+  `--answers` matches by substring against the live prompt text, and an
+  earlier attempt's `directory=N` key ALSO substring-matched an unrelated
+  free-text prompt ("Enter a writable directory..."), forcing the literal
+  string `"N"` in as a bogus directory path and breaking every later
+  technique in that run. **Lesson for future debugging**: if a real
+  exploit chain "randomly" fails run-to-run against an identical target,
+  check the test/recipe's own session/login handling before concluding the
+  target tool's detection itself is nondeterministic.
 - **Structured cross-step value passing isn't supported yet.** A template
   whose stage 2 needs a value stage 1 only discovers at runtime (a session
   cookie, a CSRF token, a found credential) can't express that today — a

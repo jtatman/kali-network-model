@@ -74,20 +74,53 @@ with no target/url/filename etc. will simply fail):
 - run_ncrack: target, service (default "ssh"), users (comma-separated), wordlist
 - run_gobuster: target, wordlist (omit to use a working default; if you set
   it, use exactly "/usr/share/seclists/Discovery/Web-Content/common.txt"),
-  mode (default "dir")
+  mode (default "dir"), threads (default "20" -- lower this against a
+  target that seems to be struggling under load, e.g. slow/erratic
+  responses or connection resets, rather than a healthy production
+  target that would more likely respond to overload with a WAF/IP-level
+  block instead), delay (optional, a duration string like "500ms"/"1s" --
+  a real per-request throttle, not just fewer concurrent threads)
 - run_enum4linux: target
 - run_medusa: target, service (default "ssh"), username (required, never ""; guess "root"/"admin"/"administrator" if unknown), wordlist
 - run_setoolkit: attack_type (default "1"), target
 - run_subfinder: domain, silent (bool, default true)
-- run_nuclei: target, templates, severity
+- run_nuclei: target, templates, severity, rate_limit (optional, requests/second
+  cap, default 150 if omitted -- lower this against a target that seems to
+  be struggling under load rather than a healthy one)
 - run_katana: target, depth (default "3")
-- run_ffuf: url, wordlist (same guidance as run_gobuster above), param (default "FUZZ")
+- run_ffuf: url, wordlist (same guidance as run_gobuster above), param
+  (default "FUZZ"), threads (optional), rate (optional, requests/second
+  cap -- takes priority over threads when both are set, per ffuf's own
+  behavior)
 - run_httpx: target, flags
 - run_metasploit: commands (raw msfconsole commands, separated by "; ", e.g.
   "search vsftpd 2.3.4; use exploit/unix/ftp/vsftpd_234_backdoor; set RHOSTS
   10.0.0.5; set RPORT 21; run"). Use "search <keyword>" first if you don't
   already know the exact module path -- its output tells you the real path
   to "use".
+- run_dirb: target, wordlist (omit for a working default), extensions (a
+  SINGLE suffix like ".php", never a comma-list -- omit for none),
+  delay_ms (optional, a plain millisecond integer -- dirb's own throttle,
+  a different unit than run_gobuster's delay string). A different
+  directory-brute tool than run_gobuster/run_ffuf -- recurses into found
+  directories automatically and skips ones already flagged listable, use
+  when you want a second, independent tool's results for the same job,
+  not as your first choice over run_gobuster.
+- run_commix: target (a URL, include the injectable parameter's query
+  string, e.g. "http://target/page.php?id=1"), param (which query/POST
+  parameter to test -- omit to let commix test all of them), data (a POST
+  body string if the injection point is in a POST field, not the URL),
+  cookie (the exact Cookie header value, e.g. "PHPSESSID=abc123;
+  security=low" -- REQUIRED for any endpoint behind a login, same as
+  run_sqlmap's/run_curl's cookie param), technique (optional, e.g.
+  "classic" or "time-based" -- omit to let commix auto-detect), os_cmd (a
+  single verification command, e.g. "id" or "whoami" -- use this to
+  CONFIRM an injection before assuming exploitation succeeded, never assume
+  a clean exit code alone means the command actually ran), msf_path (set
+  to "/usr/share/metasploit-framework" to hand a CONFIRMED injection point
+  off to Metasploit for payload generation/delivery -- commix's actual
+  Metasploit integration; only set this after os_cmd has already confirmed
+  real command execution, not on a first attempt).
 
 HYDRA SERVICE NAMES - use EXACTLY these:
 - FTP: "ftp"
@@ -953,7 +986,7 @@ def run_full_engagement(target, ports=None):
 # (search-only vs. use/run), not blocked outright, since "search cve:..." is
 # exactly the kind of identification a recon-only pass should still do.
 RECON_ONLY_BLOCKED_TOOLS = {
-    "run_hydra", "run_medusa", "run_ncrack", "run_john", "run_setoolkit",
+    "run_hydra", "run_medusa", "run_ncrack", "run_john", "run_setoolkit", "run_commix",
 }
 # Best-effort, not a hard security boundary -- run_command is a raw shell
 # escape hatch, and a sufficiently determined chain could still route an
@@ -961,7 +994,7 @@ RECON_ONLY_BLOCKED_TOOLS = {
 # the actual observed failure mode (the model reaching for a familiar
 # exploit tool/flag by habit, not adversarial evasion of this check).
 _RECON_UNSAFE_COMMAND_RE = re.compile(
-    r"\b(hydra|medusa|ncrack|msfconsole|setoolkit)\b|"
+    r"\b(hydra|medusa|ncrack|msfconsole|setoolkit|commix)\b|"
     r"sqlmap\b.{0,120}(--dump|--os-shell|--os-cmd|--os-pwn)",
     re.IGNORECASE,
 )

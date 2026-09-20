@@ -29,6 +29,7 @@ SUPPORTED_TOOLS = [
     "run_curl", "run_wget", "write_file", "read_file",
     "run_john", "run_ncrack", "run_gobuster", "run_enum4linux", "run_medusa", "run_setoolkit",
     "run_subfinder", "run_nuclei", "run_katana", "run_ffuf", "run_httpx", "run_metasploit",
+    "run_dirb", "run_commix",
 ]
 
 
@@ -90,15 +91,24 @@ class ToolExecutor:
         elif tool == "run_subfinder":
             return self._run_subfinder(params.get("domain", ""), params.get("silent", True))
         elif tool == "run_nuclei":
-            return self._run_nuclei(params.get("target", ""), params.get("templates", ""), params.get("severity", ""))
+            return self._run_nuclei(
+                params.get("target", ""), params.get("templates", ""), params.get("severity", ""),
+                params.get("rate_limit", ""),
+            )
         elif tool == "run_katana":
             return self._run_katana(params.get("target", ""), params.get("depth", "3"))
         elif tool == "run_ffuf":
-            return self._run_ffuf(params.get("url", ""), params.get("wordlist", ""), params.get("param", "FUZZ"))
+            return self._run_ffuf(
+                params.get("url", ""), params.get("wordlist", ""), params.get("param", "FUZZ"),
+                params.get("rate", ""), params.get("threads", ""),
+            )
         elif tool == "run_httpx":
             return self._run_httpx(params.get("target", ""), params.get("flags", ""))
         elif tool == "run_gobuster":
-            return self._run_gobuster(params.get("target", ""), params.get("wordlist", ""), params.get("mode", "dir"))
+            return self._run_gobuster(
+                params.get("target", ""), params.get("wordlist", ""), params.get("mode", "dir"),
+                params.get("threads", ""), params.get("delay", ""),
+            )
         elif tool == "run_enum4linux":
             return self._run_enum4linux(params.get("target", ""))
         elif tool == "run_medusa":
@@ -108,6 +118,17 @@ class ToolExecutor:
             )
         elif tool == "run_metasploit":
             return self._run_metasploit(params.get("commands", ""))
+        elif tool == "run_dirb":
+            return self._run_dirb(
+                params.get("target", ""), params.get("wordlist", ""), params.get("extensions", ""),
+                params.get("delay_ms", ""),
+            )
+        elif tool == "run_commix":
+            return self._run_commix(
+                params.get("target", ""), params.get("param", ""), params.get("data", ""),
+                params.get("technique", ""), params.get("os_cmd", ""), params.get("msf_path", ""),
+                params.get("cookie", ""),
+            )
         else:
             return {
                 "status": "error",
@@ -202,6 +223,117 @@ class ToolExecutor:
             # (e.g. "PHPSESSID=abc123; security=low"), not just a session id.
             command += f' --cookie="{cookie}"'
         command += " --batch"
+        return self._execute_command(command)
+
+    def _run_commix(self, target, param, data, technique, os_cmd, msf_path, cookie=None):
+        if not target:
+            return {"status": "error", "error_type": "invalid_params", "message": "No target URL specified for commix"}
+        # Same shlex-quote reasoning as run_sqlmap's target -- commix's -u
+        # is also almost always a URL with a "&"-separated query string,
+        # unquoted "&" gets read as a shell background-job separator by
+        # the remote shell. --batch matches sqlmap's own "never block on
+        # an interactive prompt" requirement for unattended execution.
+        #
+        # --ignore-stdin is NOT optional despite being undocumented in
+        # `commix --help`'s printed output (confirmed present in
+        # src/utils/menu.py, just not shown under the printed headings) --
+        # live-tested and confirmed REQUIRED under this harness's execution
+        # model: commix's own startup logic (src/core/main.py) checks
+        # `sys.stdin.isatty()` and, whenever stdin is not a real terminal
+        # (true for every docker-exec/SSH non-interactive invocation this
+        # tool ever runs under), silently sets STDIN_PARSING=True and
+        # ignores -u ENTIRELY, printing only "Using 'stdin' for parsing
+        # targets list." and exiting -- no error, no traceback, just a
+        # no-op. Confirmed exactly this failure live against DVWA before
+        # finding --ignore-stdin in the source and confirming it fixes it.
+        command = f"commix -u {shlex.quote(target)} --batch --ignore-stdin"
+        if param:
+            command += f" -p {shlex.quote(param)}"
+        if data:
+            # POST body, e.g. "username=admin&injectable_field=test" --
+            # same quoting need as `target`, same reason.
+            command += f" --data={shlex.quote(data)}"
+        if cookie:
+            # Same requirement as run_sqlmap's/run_hydra's cookie param --
+            # a login-gated injectable page (e.g. DVWA's Command Injection
+            # module) is unreachable without the real session cookie pair
+            # (e.g. "PHPSESSID=abc123; security=low"), live-confirmed
+            # against DVWA's own /vulnerabilities/exec/ page.
+            command += f" --cookie={shlex.quote(cookie)}"
+        if technique:
+            command += f" --technique={shlex.quote(technique)}"
+        if os_cmd:
+            # Single-command verification mode (e.g. "id", "whoami") once
+            # an injection point is already confirmed. LIVE-TESTED REAL BUG
+            # (confirmed via source inspection, src/core/injections/
+            # controller/checks.py's enable_shell()): after a confirmed
+            # injection AND after --os-cmd's own command runs successfully,
+            # commix unconditionally asks "...Do you want to spawn a
+            # pseudo-terminal shell? [Y/n]" and, because --ignore-stdin
+            # (required above, see that flag's own comment) makes
+            # STDIN_PARSING False, its default answer flips to "Y" -- it
+            # then tries to open an interactive shell against this
+            # harness's non-interactive stdin, hits EOF, and LOOPS
+            # FOREVER retrying the same read (confirmed live: 5+ minutes
+            # of 80% CPU, hundreds of thousands of log lines, no further
+            # network requests). --batch does NOT suppress this specific
+            # prompt. The real fix, found in common.py's read_input():
+            # --answers matches by substring against the prompt text, so
+            # 'shell=N' answers it "N" and the process exits cleanly
+            # immediately after printing --os-cmd's real result.
+            #
+            # A run that falls through to commix's semi-blind file-based
+            # technique (rather than the faster results-based classic
+            # technique landing first) hits THREE MORE interactive
+            # prompts the single shell=N answer doesn't cover: "Do you
+            # want to use a random file '<X>.txt'...? [Y/n]" (answer Y --
+            # accept it), "Do you want to use the URL 'http://.../<X>.txt'
+            # ...? [Y/n]" (answer Y), and "Insufficient permissions on
+            # directory '<web_root>'. Do you want to use '/tmp/' instead?
+            # [Y/n]" (answer Y) -- there's also a FOURTH, free-text prompt
+            # ("Enter a writable directory to use for file operations
+            # (e.g. '/var/www/html/') > ") that must NOT be answered at
+            # all; it has its own sensible default and forcing any value
+            # into it breaks the flow (see the mistake below).
+            #
+            # REAL BUG FOUND AND FIXED in an earlier version of this
+            # answers string: --answers matches by SUBSTRING against the
+            # live prompt text (src/utils/common.py's read_input()), so a
+            # key must be unique to only its intended prompt. An earlier
+            # attempt used 'directory=N' as a key intending to skip past
+            # something -- but "directory" is ALSO a substring of the
+            # free-text "Enter a writable directory..." prompt above, so
+            # that prompt got force-fed the literal string "N" as its
+            # answer, i.e. commix tried to write output files into a
+            # directory literally named "N" (confirmed live: "Attempting
+            # to create a file in directory 'N'..."), which naturally
+            # then failed every subsequent technique. Fixed by using
+            # longer, verified-unique substrings ('random', 'use the URL',
+            # 'Insufficient') and deliberately NOT supplying a key for the
+            # free-text directory prompt, letting it fall through to its
+            # own default. This same mistake was ALSO the reason a real
+            # exploit chain appeared to succeed 2 times then mysteriously
+            # fail on a 3rd identical-looking attempt earlier in testing
+            # -- that specific failure's actual root cause turned out to
+            # be a SEPARATE bug in the test harness's own login/cookie
+            # capture (not carrying one session's cookie through both the
+            # GET and the login POST, see dvwa_commix_exec_chain's own
+            # extensive comment in pipeline_recipes.py), not commix's
+            # detection being nondeterministic -- worth remembering if a
+            # future run seems to "randomly" fail: check login/session
+            # correctness before suspecting commix itself.
+            command += (
+                f" --os-cmd={shlex.quote(os_cmd)} "
+                "--answers='shell=N,random=Y,use the URL=Y,Insufficient=Y'"
+            )
+        if msf_path:
+            # The actual "integrates directly with Metasploit" hook: once
+            # commix confirms an injection point, pointing it at a real
+            # local msf install (e.g. /usr/share/metasploit-framework) lets
+            # it hand off to msfvenom/msfconsole for payload generation/
+            # delivery through that same confirmed injection point, rather
+            # than commix's own more limited built-in shell.
+            command += f" --msf-path={shlex.quote(msf_path)}"
         return self._execute_command(command)
 
     def _run_nikto(self, target, port, ssl):
@@ -442,11 +574,56 @@ class ToolExecutor:
             command += f" --format={format}"
         return self._execute_command(command)
 
-    def _run_gobuster(self, target, wordlist, mode):
+    def _run_gobuster(self, target, wordlist, mode, threads=None, delay=None):
         if not target:
             return {"status": "error", "error_type": "invalid_params", "message": "No target specified"}
         wordlist = wordlist or "/usr/share/seclists/Discovery/Web-Content/common.txt"
-        command = f"gobuster {mode} -u {target} -w {wordlist} -t 20"
+        # threads/delay are optional throttling for a target that can't
+        # absorb the default -t 20 concurrency without falling over (e.g.
+        # an under-resourced Node backend hitting its own memory/event-loop
+        # limits under load -- a real WAF/production target would more
+        # likely respond to the same overload pattern with an IP ban
+        # instead of a crash, which is its own separate failure mode this
+        # doesn't address, see run_ffuf's/run_dirb's own comments on the
+        # distinction). --delay takes a duration string (e.g. "500ms",
+        # "1s"), confirmed via `gobuster dir --help`; passed straight
+        # through, not converted from a bare number, so a recipe/model
+        # calling this must supply the unit.
+        command = f"gobuster {mode} -u {target} -w {wordlist} -t {threads or 20}"
+        if delay:
+            command += f" --delay {delay}"
+        return self._execute_command(command)
+
+    def _run_dirb(self, target, wordlist, extensions, delay_ms=None):
+        if not target:
+            return {"status": "error", "error_type": "invalid_params", "message": "No target specified for dirb"}
+        # NOTE: DirBuster (the actual Java/Swing tool) was tried first and
+        # rejected -- its headless mode (-H) throws a real
+        # java.lang.NullPointerException on startup in the Kali package
+        # (1.0-RC1: Manager.start() unconditionally touches a GUI panel
+        # object that's never initialized headless), confirmed reproducible
+        # twice against two different targets. dirb is a different,
+        # unrelated CLI tool that fills the same directory-brute role and
+        # actually works headless -- confirmed live end-to-end against DVWA
+        # (172.17.0.12): 4612 words scanned, 6 real findings including a
+        # listable /config/ directory. -S (silent) suppresses per-request
+        # noise, matching gobuster's own -q. dirb recurses into found
+        # directories by default (no -r/-R flag needed for that, unlike
+        # DirBuster) but a directory dirb finds already-LISTABLE it
+        # correctly skips scanning further, per its own WARNING output.
+        wordlist = wordlist or "/usr/share/wordlists/dirb/common.txt"
+        command = f"dirb {shlex.quote(target)} {shlex.quote(wordlist)} -S"
+        if extensions:
+            # dirb's -X takes ONE suffix string (e.g. ".php"), not a
+            # comma-list like gobuster's -x -- do not pass multiple
+            # extensions here, only the single most relevant one.
+            command += f" -X {shlex.quote(extensions)}"
+        if delay_ms:
+            # dirb's own throttle: "-z <millisecs>: Add a milliseconds
+            # delay to not cause excessive Flood" (its own --help wording)
+            # -- a bare integer, not a duration string like gobuster's
+            # --delay, confirmed via `dirb --help`.
+            command += f" -z {delay_ms}"
         return self._execute_command(command)
 
     def _run_enum4linux(self, target):
@@ -493,7 +670,7 @@ class ToolExecutor:
             command += " -silent"
         return self._execute_command(command)
 
-    def _run_nuclei(self, target, templates, severity):
+    def _run_nuclei(self, target, templates, severity, rate_limit=None):
         if not target:
             return {"status": "error", "error_type": "invalid_params", "message": "No target specified"}
         command = f"nuclei -u {target}"
@@ -505,6 +682,17 @@ class ToolExecutor:
             command += f" -t {templates}"
         if severity:
             command += f" -severity {severity}"
+        if rate_limit:
+            # -rl caps requests/second (default 150) -- nuclei's own
+            # concurrency defaults (-c 25 templates in parallel, -bs 25
+            # hosts in parallel per template) are tuned for a normal
+            # production target and can meaningfully stress a fragile
+            # backend (e.g. a Node app with a small heap ceiling) well
+            # before the target would ever return an HTTP-level rate-
+            # limit response -- passing a lower -rl here doesn't change
+            # -c/-bs themselves, it caps the aggregate request rate
+            # across all of them.
+            command += f" -rl {rate_limit}"
         command += " -silent"
         return self._execute_command(command)
 
@@ -514,7 +702,7 @@ class ToolExecutor:
         command = f"katana -u {target} -depth {depth} -silent"
         return self._execute_command(command)
 
-    def _run_ffuf(self, url, wordlist, param):
+    def _run_ffuf(self, url, wordlist, param, rate=None, threads=None):
         if not url:
             return {"status": "error", "error_type": "invalid_params", "message": "No URL specified"}
         wordlist = wordlist or "/usr/share/seclists/Discovery/Web-Content/common.txt"
@@ -523,6 +711,13 @@ class ToolExecutor:
         # -s, not -silent -- confirmed against the real installed ffuf binary
         # (`ffuf -h`); the old flag name was rejected outright at runtime.
         command = f"ffuf -u {url} -w {wordlist} -mc 200,301,302,403 -s"
+        if threads:
+            command += f" -t {threads}"
+        if rate:
+            # -rate is requests/second and, per ffuf's own --help, takes
+            # priority over -t/-p when both are set -- a genuine target-
+            # side throttle rather than just fewer concurrent workers.
+            command += f" -rate {rate}"
         return self._execute_command(command)
 
     def _run_httpx(self, target, flags):
