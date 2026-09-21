@@ -583,6 +583,93 @@ target is actually live.
   stable than a vulhub container's, it just happens to persist across a
   single uptime period rather than every relaunch.
 
+## `wp2shell_full_chain`: one full web app, walked end to end
+
+The multi-turn ratio gap below (<1% vs. a 60-70% target) is this corpus's
+single biggest problem, and every recipe up to this point only ever exercised
+a narrow slice of a target (one FTP misconfig, one DVWA login form). This
+template is the first genuine end-to-end trajectory against one real, fairly
+complex web app, walked the way a human pentester actually works a target:
+connectivity verification → directory/file/hidden-content enumeration →
+form/parameter discovery → (gated) sqlmap + credential fuzzing + nuclei CVE
+scan + commix (with its real `--msf-path` Metasploit hand-off) + searchsploit
++ a metasploit module search.
+
+**Target**: `wordpress/CVE-2026-63030` ("wp2shell") -- picked over
+Drupalgeddon2 (no db service), phpMyAdmin (the target IS a db tool, not a
+business app), a bare Django SQLi route (single endpoint, not a real
+multi-page app), and Magento/Joomla (narrower tooling coverage) specifically
+because it's a full multi-page WordPress install with a real MySQL backend, a
+genuine unauthenticated blind-SQLi CVE chain, and a baked-in admin/admin
+default account.
+
+**No proxy/mitmdump tool was built.** This repo has zero proxy-capture
+support and no browser/client to drive traffic through one in this headless
+harness -- the "URL list with parameters" step instead comes directly from
+gobuster + dirb + katana output, deduped and filtered to lines containing
+`?`. This gets the real goal (a verified list of param-bearing URLs to feed
+sqlmap/commix) without inventing new tool infrastructure.
+
+**Cross-step value passing** follows this file's existing convention (one big
+`run_command` shell chain per stage, real `$VAR`/file capture) rather than
+solving the general architecture gap noted below -- see the template's own
+comment in `pipeline_recipes.py` for exactly how the stage_1 → stage_2
+handoff (the param-URL list) crosses via a file on the exec target's own
+persistent `/tmp`, not a template placeholder.
+
+**Three real bugs found and fixed by actually running this live** (not just
+reasoned through statically -- see the template's own comment for full
+detail):
+1. Plain `dirb -S` (recursive by default) against a real WordPress site's
+   large, legitimately-browsable directory tree never finished -- it was
+   still running, orphaned, inside the exec container more than two hours
+   after the orchestrator's own `docker exec` call had already timed out and
+   given up (killing the local client does NOT kill the process it started
+   inside the container). Fixed with `-r` (non-recursive) plus wrapping every
+   long-running sub-command in both stages with `timeout Ns`.
+2. `remote_exec.py`'s `subprocess.run()` calls used strict UTF-8 decoding --
+   a heavy chain's real combined stdout can contain a few genuinely invalid
+   UTF-8 bytes, which raised `UnicodeDecodeError` *inside* `subprocess.run()`
+   itself and got misreported as a generic `ssh_client_error` that hid the
+   real, mostly-valid output entirely. Fixed at the shared `remote_exec.py`
+   level with `errors="replace"` -- this fixes every tool call under
+   `local_docker`/SSH transport, not just this recipe.
+3. `-t wordpress-templates` is not a real nuclei template path (nuclei
+   printed `[FTL] Could not run nuclei: no templates provided for scan` and
+   silently moved on) -- fixed to `-tags wordpress`, nuclei's real mechanism
+   for cross-directory tag filtering. A parallel bug in the searchsploit step
+   (grepping nmap/gobuster output for a "WordPress X.Y" string that's never
+   actually present in either, so `searchsploit ""` silently dumped the
+   entire exploit-db every run) was fixed by curling the homepage and
+   grepping its `<meta name="generator">` tag instead, guarded so
+   searchsploit is skipped if that comes back empty.
+
+**Live-verified real findings** (see `training-data/pipeline_chains_generated.jsonl`,
+pathway `wp2shell_full_chain__v0`): hydra recovered the image's own
+documented `admin`/`admin` default against `wp-login.php`; sqlmap correctly
+reported all 10 discovered param-bearing URLs as NOT injectable at
+`--level=2 --risk=2` (an honest negative -- CVE-2026-63030's real SQLi lives
+in the `/wp/v2/batch` endpoint's JSON request body via
+`author__not_in`/`author_exclude`, not a plain GET query param, so this is
+the expected result); commix likewise found none of those URLs OS-command-
+injectable (same reasoning); and nuclei's `-tags wordpress` pass identified
+**both real CVEs live on the target** -- `CVE-2026-63030 critical` at
+`/?rest_route=/batch/v1` (this recipe's own target vulnerability) and a bonus
+`CVE-2026-64638 high` on `wp-login.php`.
+
+**Frozen skeleton, intended variation points for follow-up work**: wordlists
+(`gobuster`/`dirb`/`hydra`'s `cred_wordlist`), `sqlmap`'s `--level`/`--risk`,
+thread counts, nuclei's `-severity` filter, and the per-tool `timeout N`
+bounds are all meant to be tuned inside this frozen shape rather than
+rebuilding the trajectory from scratch. Explicitly **out of scope** for this
+first pass: the user's original "loop back to metasploit/proxy/fuzzers/XSS
+all over again" idea as a genuine third-plus round --
+`CONFIG.ALLOW_FULL_PIPELINE_CHAINS` only gates a single stage_1 → stage_2
+boundary, there's no N-stage mechanism, and building one is a separate
+architecture change. A second-generation variation (`__v1`) that re-enters
+recon with the newly-recovered admin/admin credentials is the natural next
+step, but it's follow-up work, not part of freezing v0.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training

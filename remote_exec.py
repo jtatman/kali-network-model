@@ -65,8 +65,23 @@ def _run_local_docker(command, timeout, retry_with_sudo):
     argv = ["docker", "exec", CONFIG.DOCKER_CONTAINER, "sh", "-c", command]
     exec_timeout = timeout if timeout is not None else CONFIG.EXEC_TIMEOUT_SECONDS
 
+    # errors="replace" (not the text=True default of "strict"): confirmed
+    # live that a heavy multi-tool run_command chain (sqlmap at --level=2
+    # --risk=2 across several URLs, piped through commix/hydra/nuclei) can
+    # produce a few genuinely invalid UTF-8 bytes in its combined stdout --
+    # under strict decoding this raises UnicodeDecodeError INSIDE
+    # subprocess.run() itself, caught by the bare `except Exception` below
+    # and misreported as a generic "ssh_client_error" that hides the real
+    # command's actual (mostly valid, informative) output entirely. This
+    # project's own convention is to keep messy-but-real tool output as
+    # legitimate signal rather than discard it -- replacing the handful of
+    # bad bytes with U+FFFD does that; failing the whole call over them
+    # does not.
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=exec_timeout)
+        result = subprocess.run(
+            argv, capture_output=True, text=True, timeout=exec_timeout,
+            encoding="utf-8", errors="replace",
+        )
     except subprocess.TimeoutExpired:
         return {
             "status": "error",
@@ -118,7 +133,10 @@ def run(command, timeout=None, retry_with_sudo=False):
     total_timeout = CONFIG.SSH_CONNECT_TIMEOUT_SECONDS + exec_timeout
 
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=total_timeout)
+        result = subprocess.run(
+            argv, capture_output=True, text=True, timeout=total_timeout,
+            encoding="utf-8", errors="replace",
+        )
     except subprocess.TimeoutExpired:
         return {
             "status": "error",

