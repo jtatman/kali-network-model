@@ -670,6 +670,32 @@ architecture change. A second-generation variation (`__v1`) that re-enters
 recon with the newly-recovered admin/admin credentials is the natural next
 step, but it's follow-up work, not part of freezing v0.
 
+### `es_groovy_rce_chain`: grinding through more vulhub targets, one at a time
+
+The user asked to keep working through vulhub targets individually --
+bring one up, run the existing tools/scripts against it, produce real
+dataset rows, tear it down, move to the next -- rather than building out
+every recipe in one sitting. `es_groovy_rce_chain` (`elasticsearch/
+CVE-2015-1427`, Groovy sandbox bypass RCE) is the first of these: a
+deliberately different vuln class from `wp2shell_full_chain` -- the RCE is
+a single crafted `curl` POST to ES's own `_search` endpoint, no sqlmap/
+commix/hydra needed at all, and it closes the loop with an unambiguous
+**positive** result (`root`-level command execution) rather than
+wp2shell's honest-negative sqlmap/commix pass. Live-verified end to end:
+nuclei's `-tags elasticsearch` pass correctly identified CVE-2015-1427
+itself plus a bonus CVE-2015-5531, and the actual exploit chain recovered
+real command output (`id` → `uid=0(root) gid=0(root) groups=0(root)`,
+`whoami` → `root`). One real gotcha found live: ES's near-real-time search
+means querying immediately after indexing a seed document can return zero
+hits (so `script_fields` never evaluates, silently looking like the RCE
+itself failed) -- fixed with an explicit `POST /{index}/_refresh` between
+seeding and exploiting, not a reliance on ES's default refresh interval.
+See the template's own comment in `pipeline_recipes.py` for full detail.
+This work is intentionally single-container/low-tool-surface (no directory
+enumeration -- ES has no web-app content tree to brute-force), a
+deliberate contrast with `wp2shell_full_chain`'s much broader tool spread,
+so the corpus gets real variety in chain SHAPE, not just target IP.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training
