@@ -53,7 +53,7 @@ will work; none of them start automatically on their own:
    apt list this project has confirmed necessary): `nmap masscan naabu nuclei
    subfinder httpx-toolkit katana gobuster ffuf nikto hydra medusa ncrack
    john sqlmap exploitdb enum4linux metasploit-framework dirb commix
-   seclists`.
+   seclists redis-tools`.
 3. **This repo's own `.venv`** — `uv sync` if `.venv/` doesn't exist or looks
    stale after a `pyproject.toml`/`uv.lock` change.
 

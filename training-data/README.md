@@ -696,6 +696,26 @@ enumeration -- ES has no web-app content tree to brute-force), a
 deliberate contrast with `wp2shell_full_chain`'s much broader tool spread,
 so the corpus gets real variety in chain SHAPE, not just target IP.
 
+### `redis_lua_rce_chain`: third grind-through target, a binary-protocol service
+
+`redis/CVE-2022-0543` (Lua sandbox escape RCE, a Debian/Ubuntu packaging
+bug reachable via an unauthenticated `EVAL`). A third distinct chain
+shape: no HTTP/curl anywhere at all, exploitation is entirely through
+`redis-cli` talking the native redis protocol. `redis-cli` was not
+installed on `kali-agent-box` before this recipe (confirmed live via
+`which redis-cli`) -- installed via `apt-get install -y redis-tools`, now
+added to `CLAUDE.md`'s cold-start package list and `bd memories
+gotcha-kali-package-list-for-execution-target`; any fresh/rebuilt exec
+target needs this before any redis-targeting recipe works. Live-verified
+end to end with a real positive result -- root-level `id`/`whoami` output
+via the Lua `package.loadlib` sandbox escape -- and nuclei's `-tags redis`
+pass (using a `host:port` target spec, not `http://`, since this
+template lives under nuclei-templates' `network/` tree rather than
+`http/` -- checked before guessing at invocation syntax) turned up a
+genuinely large bonus haul: the target CVE itself, unauthenticated-access
+confirmation, a live `redis-info` dump, and three further real 2025 CVEs
+this same image is also vulnerable to.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training
