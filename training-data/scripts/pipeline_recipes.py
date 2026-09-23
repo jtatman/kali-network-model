@@ -481,6 +481,92 @@ SINGLE_STAGE_TEMPLATES = [
             },
         ],
     },
+    {
+        # Inspired by recon0 (github.com/badchars/recon0), a Go bug-bounty
+        # pipeline surveyed this session for chaining ideas. recon0 runs
+        # this as its own ANALYZE stage (60+ regex rules over crawled JS/
+        # HAR/headers, fed by a headless-Chrome CRAWL + DISCOVER stage) --
+        # its ENUM/RESOLVE/PROBE stages (subfinder/amass/dnsx/tlsx) are all
+        # subdomain- and DNS-based and don't apply here (our targets are
+        # bare vulhub container IPs, not domains with subdomains/CT logs),
+        # so this recipe borrows only the ANALYZE idea and reimplements it
+        # with tools already on this box -- katana's own `-jc` (JS endpoint
+        # parsing) stands in for recon0's CDP/HAR capture, no headless
+        # browser needed for these targets. Single-stage/recon_only:
+        # read-only header/content inspection, no exploitation, safe to
+        # always run. Target-agnostic by design (works against any live
+        # HTTP target, not tied to one CVE) so it pays off across every
+        # existing recipe's target, not just one -- run it as a first pass
+        # before any CVE-specific recipe. LIVE-VERIFIED against wp2shell
+        # (wordpress/CVE-2026-63030, 172.31.0.3): correctly found real
+        # version disclosure (Server: Apache/2.4.67 (Debian), X-Powered-By:
+        # PHP/8.3.31) and three missing security headers (HSTS/CSP/X-Frame-
+        # Options); the secret-pattern scan over 8 real fetched JS bodies
+        # and the sensitive-path probe (.env/.git/.bak) both correctly
+        # returned zero -- honest negatives, this target has no leaked
+        # secrets or exposed dotfiles, not a broken pattern.
+        #
+        # REAL BUG found on first harness run (not caught by manually
+        # piping this same script through `bash -c` by hand, only
+        # surfaced going through the actual `docker exec ... sh -c
+        # "<command>"` subprocess.run() path remote_exec.py uses):
+        # sh -c's own exit status is whatever its LAST executed
+        # statement returns, and this chain's last statement was
+        # `[ "$code" = "200" ]` from the sensitive-path probe loop --
+        # on this target every probe path correctly 404s (an honest
+        # negative), so that test's own exit code is 1, which the
+        # harness then reports as `stage_1_failed: true` even though
+        # every finding printed was completely correct. Fixed by
+        # appending a final `echo` after the loop, which always exits
+        # 0 -- a recipe's real "no finding" outcome must never be
+        # allowed to become the chain's own exit code, since a
+        # negative and a syntax/execution failure need to stay
+        # distinguishable to whatever reads `stage_1_failed` later.
+        "template_id": "secrets_header_analysis_chain",
+        "verified": True,
+        "stage_1": [
+            {
+                "tool": "run_command",
+                "command": (
+                    "timeout 90 katana -u http://{target} -depth 3 -silent -jc -kf all "
+                    "| tee /tmp/secrets_katana.txt >/dev/null ; "
+                    "timeout 60 curl -s -D /tmp/secrets_headers.txt -o /tmp/secrets_body.html "
+                    "http://{target}/ >/dev/null ; "
+                    "echo '=== SECURITY HEADERS ===' ; "
+                    "grep -iE '^(server|x-powered-by|x-aspnet-version):' /tmp/secrets_headers.txt ; "
+                    "grep -qi '^access-control-allow-origin: \\*' /tmp/secrets_headers.txt "
+                    "&& echo 'FINDING: CORS wildcard (Access-Control-Allow-Origin: *)' ; "
+                    "grep -qi '^strict-transport-security:' /tmp/secrets_headers.txt "
+                    "|| echo 'FINDING: missing Strict-Transport-Security header' ; "
+                    "grep -qi '^content-security-policy:' /tmp/secrets_headers.txt "
+                    "|| echo 'FINDING: missing Content-Security-Policy header' ; "
+                    "grep -qi '^x-frame-options:' /tmp/secrets_headers.txt "
+                    "|| echo 'FINDING: missing X-Frame-Options header' ; "
+                    "echo '=== JS/URL ENDPOINTS FOR SECRET SCAN ===' ; "
+                    "grep -oE 'https?://[^ \"]+\\.js[^ \"]*' /tmp/secrets_katana.txt | sort -u "
+                    "| tee /tmp/secrets_js_urls.txt ; "
+                    "rm -f /tmp/secrets_js_bodies.txt ; "
+                    "while read -r js; do timeout 20 curl -s \"$js\" >> /tmp/secrets_js_bodies.txt; "
+                    "echo >> /tmp/secrets_js_bodies.txt; done < /tmp/secrets_js_urls.txt ; "
+                    "echo '=== SECRET PATTERN MATCHES ===' ; "
+                    "cat /tmp/secrets_body.html /tmp/secrets_js_bodies.txt 2>/dev/null "
+                    "| grep -oE '(AKIA[0-9A-Z]{{16}}|AIza[0-9A-Za-z_-]{{35}}|ghp_[0-9A-Za-z]{{36}}"
+                    "|xox[baprs]-[0-9A-Za-z-]{{10,48}}|eyJ[A-Za-z0-9_-]{{10,}}\\.[A-Za-z0-9_-]{{10,}}"
+                    "\\.[A-Za-z0-9_-]{{10,}}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' | sort -u "
+                    "| tee /tmp/secrets_matches.txt ; "
+                    "echo \"matches: $(wc -l < /tmp/secrets_matches.txt)\" ; "
+                    "echo '=== SENSITIVE PATH PROBE ===' ; "
+                    "for p in .env .git/HEAD .git/config wp-config.php.bak .DS_Store config.php.bak; do "
+                    "code=$(curl -s -o /dev/null -w '%{{http_code}}' http://{target}/$p); "
+                    "[ \"$code\" = \"200\" ] && echo \"FINDING: exposed $p (HTTP 200)\"; done ; "
+                    "echo '=== ANALYSIS COMPLETE ==='"
+                ),
+            },
+        ],
+        "variations": [
+            {"target": "172.31.0.3"},
+        ],
+    },
 ]
 
 # --- Two-stage (stage-1 -> stage-2) templates -------------------------------

@@ -740,6 +740,68 @@ needing a reachable callback address. nuclei's real tag for this CVE is
 searchsploit came back "No Results" for this one -- an honest negative,
 not a bug (see the template's own comment).
 
+### `secrets_header_analysis_chain`: a target-agnostic recon stage, borrowed from surveying other OSINT pipelines
+
+Inspired by [recon0](https://github.com/badchars/recon0), a Go bug-bounty
+recon pipeline surveyed this session for chaining ideas (the user runs it
+on real external targets; it errors on our internal vulhub-lab targets
+because its ENUM/RESOLVE stages assume a real domain with subdomains/CT
+logs/DNS -- a bare container IP has none of that). recon0's shape is a
+9-stage pipeline: `ENUM(subfinder/amass) -> RESOLVE(dnsx, gate: stop if 0
+alive) -> PROBE(httpx/tlsx) -> CRAWL(headless Chrome, HAR+JS) ->
+PORTSCAN(naabu) -> DISCOVER(parse HAR/JS -> endpoints.json) ->
+ANALYZE(60+ regex rules for secrets/misconfig) -> COLLECT(LLM ranks
+attack paths) -> VULN(nuclei + tech-aware fuzzing)`. Checked what's
+actually on `kali-agent-box` against recon0's own `providers` list:
+`subfinder`/`amass` installed but not applicable (no subdomains to
+enumerate against a single container IP); `dnsx` is apt-available on
+Kali (`1.3.1-0kali1`) but not installed, also not applicable for the same
+reason; `tlsx` isn't packaged under that name in Kali's repos at all and
+has no Go toolchain on this box to build it from source either way, and
+is low-value regardless since these targets are plain HTTP, not TLS;
+`httpx`/`naabu`/`nuclei`/`katana` (recon0's PROBE/PORTSCAN/VULN/CRAWL
+equivalents) are already in every existing recipe. Verdict: of recon0's 7
+external providers, only the ones we already use apply to this project's
+target shape (single-host, known-CVE, no DNS) -- not worth apt-installing
+`dnsx` just to leave it idle, and RECONFLOW (the other Go project
+checked) turned out to be a README-only stub with no actual code, nothing
+to take from it.
+
+The one genuinely new idea worth taking is recon0's **ANALYZE stage** --
+nothing in this repo's existing recipes grepped crawled content/headers
+for secrets or checked security-header hygiene. `secrets_header_analysis_chain`
+reimplements that idea with what's already installed: `katana -jc -kf
+all` (JS-endpoint parsing) stands in for recon0's headless-Chrome/HAR
+capture -- no browser automation needed for these targets. Single-stage,
+`recon_only`, read-only (header/content inspection + a handful of `curl`
+probes, no exploitation), and deliberately target-agnostic (just a
+`{target}` variable) so it's meant to be run as a first pass ahead of any
+CVE-specific recipe, not tied to one CVE the way every other recipe here
+is. LIVE-VERIFIED against wp2shell (`wordpress/CVE-2026-63030`,
+172.31.0.3): correctly found real version disclosure (`Server:
+Apache/2.4.67 (Debian)`, `X-Powered-By: PHP/8.3.31`) and three missing
+security headers (HSTS/CSP/X-Frame-Options); the secret-pattern scan over
+8 real fetched JS bodies and the sensitive-path probe (`.env`/`.git`/
+`.bak`) both correctly returned zero matches -- honest negatives, not a
+broken pattern, this target has no leaked secrets or exposed dotfiles.
+
+**Real bug found on the first actual harness run** (not caught by
+manually piping the same script through `bash -c` by hand -- only
+surfaced going through the real `docker exec ... sh -c "<command>"`
+`subprocess.run()` path `remote_exec.py` actually uses): a POSIX `sh -c`
+script's own exit status is whatever its LAST executed statement
+returns, and this chain's last statement was the sensitive-path probe's
+`[ "$code" = "200" ]` test -- since every probe path correctly 404s on
+this target (an honest negative), that test's own exit code is 1, which
+the harness then reported as `stage_1_failed: true` even though every
+finding printed was completely correct. Fixed by appending a final
+`echo` after the loop (always exits 0) -- **general lesson for any future
+recipe whose last pipeline step is a conditional/test rather than an
+unconditional `echo`/`tee`: a real "no finding" outcome must never be
+allowed to leak into the chain's own exit code**, or a negative result
+and a genuine syntax/execution failure become indistinguishable to
+whatever reads `stage_1_failed` downstream.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training
