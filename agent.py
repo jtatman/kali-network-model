@@ -852,11 +852,62 @@ def _run_deterministic_preflight(base_url, port, memory, cache):
     return success, log_lines
 
 
+_NUCLEI_FINDING_RE = re.compile(r"^\[[^\]]+\]\s*\[[^\]]+\]\s*\[[^\]]+\]\s+(https?://\S+)", re.MULTILINE)
+MAX_AUTO_CURL_NUCLEI_HITS = 3
+
+
+def _escalate_nuclei_findings(port, memory, cache, step_outputs, log_lines):
+    """nuclei's own -silent output already contains the exact matched URL
+    for every CVE/template hit -- confirmed live (2026-09-24, real
+    CVE-2019-9082 engagement against sqlinjection-web-1) that a CVE
+    template's reported URL can itself already BE a working RCE payload
+    (ThinkPHP's invokefunction), where fetching it returns the actual
+    command output. The model, even with that exact line sitting verbatim
+    in its next-round prompt one round later, did not re-fetch it -- it
+    pivoted to unrelated sqlmap/hydra attempts instead. Same class of gap
+    _escalate_directory_listings/_escalate_backup_files were built for
+    (kali-network-model-6w8): don't wait on the model to notice, fetch it
+    deterministically and put the real response in front of it.
+
+    Unlike _fetch_and_scan, this always records the response rather than
+    gating on a leaked-secret regex match -- an arbitrary RCE's output
+    (e.g. "phpkniht", confirmed live) essentially never matches a
+    credential/secret pattern, so gating on that would silently drop
+    exactly the content this exists to surface. This deliberately does
+    NOT set `success` itself -- same "lead, not a confirmed breach"
+    discipline as every other escalation here (kali-network-model-6w8's
+    own lesson about not conflating the two) -- the model still has to
+    look at the real output and decide/act, e.g. issue its own follow-up
+    command via the same technique."""
+    urls = set()
+    for tool, output in step_outputs:
+        if tool != "run_nuclei" or not output:
+            continue
+        urls |= set(_NUCLEI_FINDING_RE.findall(output))
+    for url in sorted(urls)[:MAX_AUTO_CURL_NUCLEI_HITS]:
+        step = {"tool": "run_curl", "url": url, "method": "GET"}
+        if cache and not cache.should_attempt(step):
+            continue
+        log.info(f"[ESCALATE] 🔗 Auto-fetching nuclei-reported CVE URL: {url}")
+        output, ok = execute_step(step)
+        if not ok or not output:
+            log_lines.append(f"  [auto-curl:nuclei-finding] {url}: fetch failed")
+            continue
+        memory.add_finding(port, "run_curl (auto nuclei-finding)", f"{url}:\n{compress_tool_output(output, max_lines=20)}")
+        log_lines.append(
+            f"  [auto-curl:nuclei-finding] {url}: fetched, real response (if this looks like "
+            f"command/data output rather than a normal page, the CVE is likely already "
+            f"exploitable through this exact URL -- confirm with a distinguishing command "
+            f"like `id` before declaring success) -- {compress_tool_output(output, max_lines=10)}"
+        )
+
+
 def _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs):
     """After a round's model-planned chain runs, deterministically follow
-    up on what it (or nikto) found: indexed directories and their listed
-    files, plus backup-suffix guesses against sensitive-sounding discovered
-    files. Returns (success, escalation_log_lines) in the same shape
+    up on what it (or nikto/nuclei) found: indexed directories and their
+    listed files, backup-suffix guesses against sensitive-sounding
+    discovered files, and nuclei's own reported CVE URLs. Returns
+    (success, escalation_log_lines) in the same shape
     _run_chain_against_port returns, so it folds into the same round
     history.
     """
@@ -865,6 +916,7 @@ def _deterministic_recon_escalation(base_url, port, memory, cache, step_outputs)
     log_lines = []
     success = _escalate_directory_listings(base_url, port, memory, cache, step_outputs, log_lines)
     success = _escalate_backup_files(base_url, port, memory, cache, step_outputs, log_lines) or success
+    _escalate_nuclei_findings(port, memory, cache, step_outputs, log_lines)
     return success, log_lines
 
 

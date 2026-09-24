@@ -431,7 +431,17 @@ class ToolExecutor:
     def _run_curl(self, url, method, headers, data, cookie=None):
         if not url:
             return {"status": "error", "error_type": "invalid_params", "message": "No URL specified for curl"}
-        command = f'curl -X {method} "{url}"'
+        # -g/--globoff: curl treats [ ] { } in a URL as its own range/list
+        # globbing syntax by default -- confirmed live that a real CVE
+        # exploit URL using PHP/ThinkPHP-style array params (vars[0]=...,
+        # vars[1][]=...) fails outright with curl exit code 3 ("malformed
+        # URL"), never reaching the target at all, with no indication the
+        # problem is curl's own globbing rather than the URL or the target.
+        # This silently broke run_curl (and every agent.py deterministic
+        # escalation that calls it) against any URL with literal brackets,
+        # which is common well beyond this one CVE (array-style query
+        # params generally).
+        command = f'curl -g -X {method} "{url}"'
         if headers:
             command += f' -H "{headers}"'
         if cookie:
