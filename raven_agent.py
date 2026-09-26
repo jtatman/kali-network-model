@@ -37,6 +37,13 @@ just noting it. Save real findings with save_finding as you confirm them, includ
 owasp_category where applicable, and call generate_report once you have covered the \
 target reasonably.
 
+Slow tools (run_feroxbuster, run_nuclei, run_sqlmap, run_hydra, run_enum4linux_ng, \
+run_john, run_gitleaks, run_trufflehog, run_netexec, msf_exploit) can take minutes and \
+may time out if called directly. For these, prefer launch_scan to run them in the \
+background, then poll with get_scan_status and read results with get_scan_results \
+once it reports completed -- rather than calling the tool directly and losing the \
+scan entirely if it times out.
+
 Keep responses concise -- do not reproduce full tool output in your text, summarize key \
 findings instead."""
 
