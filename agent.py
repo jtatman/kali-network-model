@@ -1290,6 +1290,11 @@ def main():
     print("=" * 60)
     print("Commands:")
     print("  engage <target> [ports]  - full recon + attack loop")
+    print("  raven-engage <target> [goal...] - native Ollama tool-calling loop against")
+    print("                             raven-nest-mcp instead of tools.py (see raven_agent.py,")
+    print("                             kali-network-model-nrk) -- uses CONFIG.RAVEN_OLLAMA_MODEL,")
+    print("                             not OLLAMA_MODEL; requires raven-server already deployed")
+    print("                             into DOCKER_CONTAINER at CONFIG.RAVEN_BINARY_PATH")
     print("  recon <target> [ports]   - recon/identification ONLY, never exploits")
     print("                             ports (both commands): optional comma-")
     print("                             separated list (e.g. 21,53,80,81,82,2222,3306)")
@@ -1316,6 +1321,13 @@ def main():
                 ports = parts[1] if len(parts) > 1 else None
                 run_full_engagement(target, ports=ports)
                 log.info("[REPORT] 📝 Engagement complete — generating report")
+            elif goal.startswith("raven-engage "):
+                import asyncio
+                import raven_agent
+                parts = goal.replace("raven-engage ", "").strip().split(maxsplit=1)
+                target = parts[0]
+                raven_goal = parts[1] if len(parts) > 1 else None
+                asyncio.run(raven_agent.run_raven_engagement(target, raven_goal, log, agent_logger))
             elif goal.startswith("recon "):
                 parts = goal.replace("recon ", "").strip().split()
                 target = parts[0]

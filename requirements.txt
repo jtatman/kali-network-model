@@ -1,2 +1,3 @@
 requests
 python-dotenv
+mcp>=2.2.0

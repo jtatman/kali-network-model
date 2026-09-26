@@ -11,6 +11,20 @@ import re
 from config import CONFIG
 
 
+def _result_dict(data):
+    """Normalizes a tool_call event's "result" field to the {"status":...,
+    "stdout":...} shape tools.py's own _run_* methods return. raven_agent.py
+    (kali-network-model-nrk) logs a plain string instead -- raven-nest-mcp's
+    tools already return pre-formatted text, not a structured dict -- so a
+    mixed-session report (some engage/recon calls, some raven-engage calls)
+    would otherwise crash here with 'str' object has no attribute 'get'."""
+    result = data.get("result", {})
+    if isinstance(result, str):
+        status = "error" if result.startswith("Error") else "success"
+        return {"status": status, "stdout": result}
+    return result
+
+
 def _extract_ports(output):
     """Mirrors agent.py's extract_ports. Duplicated rather than imported to
     avoid a circular import (agent.py imports this module to trigger
@@ -48,7 +62,7 @@ def generate(log_file_path, output_dir=None):
     for e in tool_calls:
         data = e.get("data", {})
         if data.get("tool") in ("run_masscan", "run_nmap"):
-            stdout = data.get("result", {}).get("stdout", "")
+            stdout = _result_dict(data).get("stdout", "")
             for p in _extract_ports(stdout):
                 if p not in ports_found:
                     ports_found.append(p)
@@ -59,8 +73,8 @@ def generate(log_file_path, output_dir=None):
         if target and target not in targets:
             targets.append(target)
 
-    successful = [e for e in tool_calls if e.get("data", {}).get("result", {}).get("status") == "success"]
-    failed = [e for e in tool_calls if e.get("data", {}).get("result", {}).get("status") != "success"]
+    successful = [e for e in tool_calls if _result_dict(e.get("data", {})).get("status") == "success"]
+    failed = [e for e in tool_calls if _result_dict(e.get("data", {})).get("status") != "success"]
 
     lines = [
         f"# Pentest Session Report — {session_id}",
@@ -81,10 +95,10 @@ def generate(log_file_path, output_dir=None):
         data = e.get("data", {})
         tool = data.get("tool", "?")
         params = data.get("parameters", {})
-        result = data.get("result", {})
+        result = _result_dict(data)
         status = result.get("status", "?")
         preview = (result.get("stdout") or result.get("message") or "")[:120].replace("\n", " ").replace("|", "\\|")
-        params_str = ", ".join(f"{k}={v}" for k, v in params.items()).replace("|", "\\|")
+        params_str = ", ".join(f"{k}={v}" for k, v in params.items())[:150].replace("\n", " ").replace("|", "\\|")
         lines.append(f"| {i} | {tool} | {params_str} | {status} | {preview} |")
 
     lines.append("")

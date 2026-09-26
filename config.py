@@ -53,6 +53,25 @@ class Config:
         self.OLLAMA_MODEL = _get("OLLAMA_MODEL")
         self.OLLAMA_NUM_CTX = _get_int("OLLAMA_NUM_CTX", 4096)
 
+        # raven-nest-mcp integration (kali-network-model-nrk) -- a SEPARATE
+        # model from OLLAMA_MODEL. pentest-agent's own Modelfile overrides
+        # the base template with a stripped-down one that never renders
+        # .Tools, so it silently can't do native Ollama tool-calling at all
+        # (confirmed via `ollama show pentest-agent` -- the active TEMPLATE
+        # has no .Tools/.ToolCalls reference). raven-nest-mcp's own
+        # extensive local-model benchmarking (docs/LOCAL_AI_INTEGRATION.md)
+        # rates the Qwen3 dense family highest for real tool-calling
+        # reliability (zero param hallucination at 8B) -- default here is
+        # qwen3:4b since that's what's already on the shared Ollama host
+        # without pulling anything new; bump to qwen3:8b if/when available.
+        self.RAVEN_OLLAMA_MODEL = _get("RAVEN_OLLAMA_MODEL", "qwen3:4b")
+        # Path to the raven-server binary and its config INSIDE
+        # DOCKER_CONTAINER (built on the orchestrator via `cargo build
+        # --release` from a local ~/raven-nest-mcp checkout, then `docker
+        # cp`'d in -- glibc-compatible since both are x86_64 linux/amd64).
+        self.RAVEN_BINARY_PATH = _get("RAVEN_BINARY_PATH", "/opt/raven-server/raven-server")
+        self.RAVEN_CONFIG_PATH = _get("RAVEN_CONFIG_PATH", "/opt/raven-server/config.toml")
+
         # Logging / cache / reports (safe local defaults so a fresh clone works with zero config)
         self.LOG_DIR = _get("LOG_DIR", "./logs")
         self.CACHE_DIR = _get("CACHE_DIR", "./.cache")
