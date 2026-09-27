@@ -802,6 +802,18 @@ allowed to leak into the chain's own exit code**, or a negative result
 and a genuine syntax/execution failure become indistinguishable to
 whatever reads `stage_1_failed` downstream.
 
+## `mcp_transcripts.jsonl`: native tool-calling data, a second corpus split (2026-09-27)
+
+A deliberately separate track from everything above — "Split A" (this file's existing content: `pipeline_recipes.py`'s templates, `CHAIN_JSON_SCHEMA`-shaped single-shot chain planning, `tools.py`'s 27-tool vocabulary) teaches raw tool *knowledge* independent of calling convention. "Split B" (`mcp_transcripts.jsonl`) teaches native, turn-by-turn Ollama tool-calling against raven-nest-mcp's 46-tool vocabulary instead (see `CLAUDE.md`'s raven-nest-mcp section and `kali-network-model-nrk`) — a different mechanism entirely: the model calls one tool, sees the real result, decides the next call, rather than planning a whole chain up front.
+
+`scripts/extract_mcp_transcripts.py` builds it from two sources, kept clearly apart:
+- **Primary, full-fidelity**: `logs/raven_transcripts/raven_*.json`, written directly by `raven_agent.py`'s `_save_transcript()` from the real in-memory `messages` list every `raven-engage` run produces — including qwen3:4b's own `"thinking"` field, which is real reasoning-trace signal worth keeping for a thinking-capable model's fine-tune.
+- **Secondary, best-effort reconstruction**: `logs/session_*.json` AgentLogger files from `raven-engage` runs that predate `_save_transcript()` (this repo's first four raven-engage tests, 2026-09-26) — AgentLogger's own log records tool_call/decision *events*, not the raw wire messages, so this rebuilds an approximation (one assistant `tool_calls` turn per logged event, matching what every session inspected by hand actually did; the *current* `raven_agent.SYSTEM_PROMPT` standing in for whatever prompt text was actually active at the time, since the real text isn't recoverable). Rows from this path are tagged `"_reconstructed": true` so they're never silently blended with genuine transcripts as if equally reliable.
+
+Most of `logs/session_*.json` predates `raven-engage` entirely (this repo's much older `engage`/`recon` sessions driving `tools.py`'s completely different vocabulary) — the extractor detects and skips those by checking for at least one tool name that only exists in raven-nest-mcp's vocabulary (`ping_target`, `http_request`, `save_finding`, `launch_scan`, ... — confirmed zero overlap with `tools.SUPPORTED_TOOLS`), not by date range, so it stays correct as more sessions of both kinds accumulate. A session covered by BOTH a primary transcript and a legacy log (i.e. any `raven-engage` run from now on) is deduplicated in favor of the primary — never emitted twice.
+
+First run (2026-09-27): 6 rows (1 primary, 5 reconstructed) from the raven-engage sessions run so far (thinkphp win ×2, django ×2, phpMyAdmin, vite). `logs/raven_transcripts/` is gitignored along with the rest of `logs/` (same policy as always — protect what can't be recreated, not everything); `mcp_transcripts.jsonl` itself is git-tracked, same as every other corpus file here.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training

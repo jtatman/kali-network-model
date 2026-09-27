@@ -18,6 +18,8 @@ is being investigated (kali-network-model-nrk). Invoke via agent.py's
 """
 
 import json
+import os
+import re
 
 import requests
 
@@ -25,6 +27,17 @@ from config import CONFIG
 from raven_mcp_client import call_tool, list_ollama_tools, raven_session
 
 MAX_ROUNDS = 12
+
+# Full-fidelity transcript persistence (kali-network-model-nrk's "Split B"
+# dataset plan -- native tool-calling fine-tune data). AgentLogger's own
+# JSON session log is lossy for this purpose: it records tool_call/decision
+# EVENTS (tool name, parameters, result text), not the raw Ollama `messages`
+# list this loop actually sends/receives -- it never captures the exact
+# tool_calls structure the model emitted, any assistant text alongside a
+# tool_calls turn, or turns with multiple simultaneous tool_calls. Saving
+# the real `messages` list directly, every run, means future extraction
+# never has to reconstruct anything.
+TRANSCRIPT_DIR = os.path.join(CONFIG.LOG_DIR, "raven_transcripts")
 
 SYSTEM_PROMPT = """You are a penetration testing assistant with access to real security \
 scanning tools. Target environment: an authorized lab (vulhub/custom containers) -- all \
@@ -77,45 +90,72 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
 
     log.info(f"[RAVEN] Starting raven-nest-mcp engagement on {target} (model={CONFIG.RAVEN_OLLAMA_MODEL})")
 
-    async with raven_session() as session:
-        tools = await list_ollama_tools(session)
-        log.info(f"[RAVEN] {len(tools)} tools discovered from raven-server")
+    outcome = "error"
+    try:
+        async with raven_session() as session:
+            tools = await list_ollama_tools(session)
+            log.info(f"[RAVEN] {len(tools)} tools discovered from raven-server")
 
-        for round_num in range(1, max_rounds + 1):
-            log.info(f"[RAVEN] Round {round_num}/{max_rounds}: calling {CONFIG.RAVEN_OLLAMA_MODEL}")
-            try:
-                msg = _ollama_chat(messages, tools)
-            except Exception as e:
-                log.error(f"[RAVEN] Model call failed: {e}")
-                break
-            messages.append(msg)
-
-            tool_calls = msg.get("tool_calls")
-            if not tool_calls:
-                content = msg.get("content", "")
-                log.info(f"[RAVEN] No further tool calls -- final response: {content[:500]}")
-                agent_logger.log_decision(reasoning=goal, chosen_action={"final": content})
-                break
-
-            for tc in tool_calls:
-                fn = tc.get("function", {})
-                name = fn.get("name")
-                args = fn.get("arguments")
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except json.JSONDecodeError:
-                        args = {}
-                log.info(f"[RAVEN] -> {name}({args})")
+            for round_num in range(1, max_rounds + 1):
+                log.info(f"[RAVEN] Round {round_num}/{max_rounds}: calling {CONFIG.RAVEN_OLLAMA_MODEL}")
                 try:
-                    result_text = await call_tool(session, name, args)
+                    msg = _ollama_chat(messages, tools)
                 except Exception as e:
-                    result_text = f"Error calling {name}: {e}"
-                    log.error(f"[RAVEN] {result_text}")
-                agent_logger.log_tool_call(tool_name=name, parameters=args, result=result_text)
-                log.info(f"[RAVEN] <- {name}: {result_text[:300]}")
-                messages.append({"role": "tool", "content": result_text})
-        else:
-            log.warning(f"[RAVEN] Hit max_rounds ({max_rounds}) without a final answer")
+                    log.error(f"[RAVEN] Model call failed: {e}")
+                    outcome = "model_call_failed"
+                    break
+                messages.append(msg)
+
+                tool_calls = msg.get("tool_calls")
+                if not tool_calls:
+                    content = msg.get("content", "")
+                    log.info(f"[RAVEN] No further tool calls -- final response: {content[:500]}")
+                    agent_logger.log_decision(reasoning=goal, chosen_action={"final": content})
+                    outcome = "final_answer"
+                    break
+
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name")
+                    args = fn.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    log.info(f"[RAVEN] -> {name}({args})")
+                    try:
+                        result_text = await call_tool(session, name, args)
+                    except Exception as e:
+                        result_text = f"Error calling {name}: {e}"
+                        log.error(f"[RAVEN] {result_text}")
+                    agent_logger.log_tool_call(tool_name=name, parameters=args, result=result_text)
+                    log.info(f"[RAVEN] <- {name}: {result_text[:300]}")
+                    messages.append({"role": "tool", "content": result_text})
+            else:
+                log.warning(f"[RAVEN] Hit max_rounds ({max_rounds}) without a final answer")
+                outcome = "max_rounds"
+    finally:
+        _save_transcript(target, goal, messages, outcome, agent_logger)
 
     log.info("[RAVEN] Engagement complete")
+
+
+def _save_transcript(target, goal, messages, outcome, agent_logger):
+    """Persist the real, complete `messages` list -- native tool-calling
+    fine-tune data, ready to reshape into {"messages": [...]} training rows
+    with zero reconstruction. Runs in a `finally` so a mid-loop error still
+    saves whatever was captured (outcome records which case it was)."""
+    os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
+    session_id = re.search(r"session_(\S+)\.json", agent_logger.log_file)
+    session_id = session_id.group(1) if session_id else "unknown"
+    path = os.path.join(TRANSCRIPT_DIR, f"raven_{session_id}.json")
+    with open(path, "w") as f:
+        json.dump({
+            "session_id": session_id,
+            "target": target,
+            "goal": goal,
+            "model": CONFIG.RAVEN_OLLAMA_MODEL,
+            "outcome": outcome,
+            "messages": messages,
+        }, f, indent=2)
