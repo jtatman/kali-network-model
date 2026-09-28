@@ -14,12 +14,25 @@ orchestrator (`cd ~/raven-nest-mcp && cargo build --release`) and
 CONFIG.RAVEN_BINARY_PATH / CONFIG.RAVEN_CONFIG_PATH.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from config import CONFIG
+
+# kali-network-model-v1c: confirmed live that a wedged docker exec -i stdio
+# pipe (an unrelated shell crash severed it mid-session; raven-server's own
+# subprocess had already exited by the time this was found) leaves
+# session.call_tool() awaiting a response that will never arrive -- no
+# timeout anywhere in the MCP client/transport stack, so the whole
+# engagement just hangs forever with zero diagnostic signal (found 10+
+# hours later, only by chance). Set comfortably above raven-nest-mcp's own
+# execution.default_timeout_secs=600 so its own internal timeout (a clean,
+# informative error) gets a chance to fire first for a genuinely slow tool;
+# this is a backstop for a wedged TRANSPORT, not a per-tool budget.
+CALL_TOOL_TIMEOUT_SECONDS = 650
 
 
 def _server_params():
@@ -70,5 +83,13 @@ async def call_tool(session, name, arguments):
     single string. raven-nest-mcp's own tools always return plain text
     (already includes ANSI-stripped, budget-tracked, structured-parser
     output per its own docs) -- there is no other content type to handle."""
-    result = await session.call_tool(name, arguments or {})
+    try:
+        result = await asyncio.wait_for(
+            session.call_tool(name, arguments or {}), timeout=CALL_TOOL_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"{name} did not respond within {CALL_TOOL_TIMEOUT_SECONDS}s -- "
+            f"the MCP stdio pipe to raven-server may be wedged (see kali-network-model-v1c)"
+        )
     return "\n".join(c.text for c in result.content if hasattr(c, "text"))
