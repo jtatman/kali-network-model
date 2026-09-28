@@ -72,6 +72,29 @@ class Config:
         self.RAVEN_BINARY_PATH = _get("RAVEN_BINARY_PATH", "/opt/raven-server/raven-server")
         self.RAVEN_CONFIG_PATH = _get("RAVEN_CONFIG_PATH", "/opt/raven-server/config.toml")
 
+        # Ollaya (https://ollaya.dev) -- a separate, locally-run calibrated
+        # decision/classifier server, NOT a generative model. Exposed to
+        # raven_agent.py's tool-calling loop as one custom `ask_decision_model`
+        # tool (see raven_agent.py's `_ollaya_decide`) that POSTs to this
+        # server's own /api/decide endpoint directly -- deliberately NOT a
+        # second MCP session (mirroring raven_mcp_client.py's raven_session()
+        # was considered and rejected for a first pass: one more persistent
+        # stdio subprocess to manage for a single simple call wasn't worth
+        # it). Runs on this same orchestrator machine by default, port 11435
+        # (separate from OLLAMA_HOST's 11434 -- a different server entirely,
+        # not an Ollama model). OLLAYA_MODEL defaults to "laya" (routes to
+        # laya:en under the hood) -- the tiny (~421MB-853MB) fast backend;
+        # the larger kev:4b (9.5GB F32 ONNX) was confirmed to time out past
+        # 120s on this machine's small/already-pressured 4GB GPU, don't
+        # switch to it without a real reason. Ollaya's priors are NOT
+        # pentest-domain-calibrated (confirmed live: it rated a real,
+        # actionable phpMyAdmin-login lead only 10% useful and picked
+        # "give_up" at 52% confidence) -- see raven_agent.py's SYSTEM_PROMPT
+        # for why this is framed to the model as a secondary opinion, not
+        # an authoritative router.
+        self.OLLAYA_HOST = _get("OLLAYA_HOST", "http://127.0.0.1:11435")
+        self.OLLAYA_MODEL = _get("OLLAYA_MODEL", "laya")
+
         # Logging / cache / reports (safe local defaults so a fresh clone works with zero config)
         self.LOG_DIR = _get("LOG_DIR", "./logs")
         self.CACHE_DIR = _get("CACHE_DIR", "./.cache")

@@ -57,8 +57,113 @@ background, then poll with get_scan_status and read results with get_scan_result
 once it reports completed -- rather than calling the tool directly and losing the \
 scan entirely if it times out.
 
+You also have a tool called ask_decision_model. This is a FAST (~1-2 second) SECOND \
+OPINION from a small local classifier -- it is NOT another pentest model and it is NOT \
+authoritative, so never treat its answer as a verdict. Use it as a cheap sanity-check: \
+e.g. before spending time chasing a lead, ask it whether the lead looks worth pursuing \
+(pass a `choices` list); or before calling save_finding, ask it to score the finding's \
+usefulness/severity (omit `choices` to get a 0-2 score instead of a choice). Its \
+training is general-purpose, not pentest-specific, so it has been observed rating real, \
+actionable leads (e.g. a genuine default-credential opportunity) as low-value -- if it \
+disagrees with your own read of the evidence, trust the real tool output over it.
+
 Keep responses concise -- do not reproduce full tool output in your text, summarize key \
 findings instead."""
+
+OLLAYA_TOOL_NAME = "ask_decision_model"
+
+# One custom Ollama-native tool that calls Ollaya's /api/decide HTTP endpoint
+# directly (see config.py's OLLAYA_HOST/OLLAYA_MODEL comment for why this is
+# a plain HTTP call rather than a second MCP session mirroring
+# raven_mcp_client.raven_session() -- one more persistent stdio subprocess
+# for a single simple request wasn't worth the bookkeeping on a first pass).
+# Merged into the same `tools` list sent to Ollama alongside raven-nest-mcp's
+# real tools; dispatched separately in the tool_calls loop below since
+# raven_mcp_client.call_tool() only knows about the raven-server MCP session.
+OLLAYA_TOOL = {
+    "type": "function",
+    "function": {
+        "name": OLLAYA_TOOL_NAME,
+        "description": (
+            "Ask Ollaya (a small, fast, locally-run calibrated classifier -- NOT "
+            "another generative model, NOT authoritative) for a quick second opinion "
+            "on the current situation. Use it to sanity-check whether a lead is worth "
+            "pursuing (pass `choices`), or to score a finding's usefulness/severity "
+            "before save_finding (omit `choices`). Its priors are general-purpose, not "
+            "pentest-tuned -- it has been observed underrating real, actionable leads, "
+            "so treat its answer as one extra input, never a reason by itself to skip "
+            "an otherwise-reasonable action."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "description": "Plain-text description of the current situation/lead/finding to evaluate.",
+                },
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "The question to ask about that state, e.g. 'What should the "
+                        "agent do next?' or 'How useful is this finding?'"
+                    ),
+                },
+                "choices": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "2-255 short option labels for a multiple-choice decision, "
+                        "e.g. ['try_default_creds', 'search_for_cve', 'skip']. Omit "
+                        "this entirely to instead get a 0-2 usefulness/severity SCORE "
+                        "(low/medium/high) rather than a choice."
+                    ),
+                },
+            },
+            "required": ["state", "question"],
+        },
+    },
+}
+
+
+def _ollaya_decide(state, question, choices=None):
+    """POST directly to Ollaya's /api/decide (a separate HTTP server, see
+    CONFIG.OLLAYA_HOST/OLLAYA_MODEL -- not an MCP call, not an Ollama model).
+    `choices` given -> a "choice" question (criteria = the choices list
+    verbatim, confirmed live that a plain label list works without
+    descriptions). `choices` omitted -> a 3-level "score" question (Ollaya's
+    v0.7.2 /api/decide rejects the model's own listed 4th "act" capability
+    with a schema error, so only choice/score/noul are usable here -- noul
+    isn't a fit for either of this tool's two use cases so it's not exposed).
+    Returns a short plain-text summary, ready to hand back as this tool
+    call's result string."""
+    question_id = "q"
+    if choices:
+        q = {"type": "choice", "instructions": question, "criteria": list(choices)}
+    else:
+        q = {
+            "type": "score",
+            "instructions": question,
+            "criteria": ["low / not useful", "medium", "high / very useful"],
+        }
+    payload = {"model": CONFIG.OLLAYA_MODEL, "state": state, "questions": {question_id: q}}
+    resp = requests.post(f"{CONFIG.OLLAYA_HOST}/api/decide", json=payload, timeout=30)
+    resp.raise_for_status()
+    body = resp.json()
+    answer = body["answers"][question_id]
+    routed_model = body.get("model", CONFIG.OLLAYA_MODEL)
+    if answer["type"] == "choice":
+        return (
+            f"Ollaya secondary opinion (model={routed_model}): "
+            f"choice='{answer['choice']}' confidence={answer['confidence']:.2f} "
+            f"probabilities={answer['probabilities']}. This is a fast heuristic guess, "
+            f"not authoritative -- weigh it against the real tool output you already have."
+        )
+    return (
+        f"Ollaya secondary opinion: score={answer['score']:.2f} "
+        f"(scale 0-{len(q['criteria']) - 1}, legend={answer['legend']}) "
+        f"confidence={answer['confidence']:.2f}. This is a fast heuristic guess, not "
+        f"authoritative -- weigh it against the real tool output you already have."
+    )
 
 
 def _ollama_chat(messages, tools):
@@ -94,7 +199,11 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
     try:
         async with raven_session() as session:
             tools = await list_ollama_tools(session)
-            log.info(f"[RAVEN] {len(tools)} tools discovered from raven-server")
+            tools = tools + [OLLAYA_TOOL]
+            log.info(
+                f"[RAVEN] {len(tools) - 1} tools discovered from raven-server "
+                f"(+ 1 local ask_decision_model/Ollaya tool)"
+            )
 
             for round_num in range(1, max_rounds + 1):
                 log.info(f"[RAVEN] Round {round_num}/{max_rounds}: calling {CONFIG.RAVEN_OLLAMA_MODEL}")
@@ -125,7 +234,14 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
                             args = {}
                     log.info(f"[RAVEN] -> {name}({args})")
                     try:
-                        result_text = await call_tool(session, name, args)
+                        if name == OLLAYA_TOOL_NAME:
+                            # Routed to Ollaya's HTTP /api/decide directly --
+                            # NOT raven_mcp_client.call_tool(), which only
+                            # knows about the raven-server MCP session and
+                            # has no idea this tool exists.
+                            result_text = _ollaya_decide(**(args or {}))
+                        else:
+                            result_text = await call_tool(session, name, args)
                     except Exception as e:
                         result_text = f"Error calling {name}: {e}"
                         log.error(f"[RAVEN] {result_text}")

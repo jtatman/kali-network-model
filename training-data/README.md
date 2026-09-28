@@ -814,6 +814,8 @@ Most of `logs/session_*.json` predates `raven-engage` entirely (this repo's much
 
 First run (2026-09-27): 6 rows (1 primary, 5 reconstructed) from the raven-engage sessions run so far (thinkphp win ×2, django ×2, phpMyAdmin, vite). `logs/raven_transcripts/` is gitignored along with the rest of `logs/` (same policy as always — protect what can't be recreated, not everything); `mcp_transcripts.jsonl` itself is git-tracked, same as every other corpus file here.
 
+**2026-09-28 addendum**: `raven-engage` sessions can now also include a 47th tool call name, `ask_decision_model` (see `CLAUDE.md`'s "Ollaya `ask_decision_model` tool" section) — a local HTTP call to Ollaya's `/api/decide`, not a raven-nest-mcp tool, merged into the same Ollama `tools` list and captured in `raven_transcripts/*.json`'s `messages` exactly like any other tool call/result pair. This does not change `extract_mcp_transcripts.py`'s raven-vocabulary detection (it checks for *any* raven-nest-mcp-only name being present, and a real engagement session still has plenty of those alongside an occasional `ask_decision_model` call) or the row shape — it just means a fine-tune consuming `mcp_transcripts.jsonl` going forward may see this extra tool name/schema in some transcripts' `tools` list and should not treat it as a hallucinated/unknown tool.
+
 ## Known gaps
 
 - **Severe tool-usage imbalance in the CORPUS (the merged/exported training
