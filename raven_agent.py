@@ -17,6 +17,7 @@ is being investigated (kali-network-model-nrk). Invoke via agent.py's
 `raven-engage <target>` REPL command.
 """
 
+import asyncio
 import json
 import os
 import re
@@ -50,12 +51,14 @@ just noting it. Save real findings with save_finding as you confirm them, includ
 owasp_category where applicable, and call generate_report once you have covered the \
 target reasonably.
 
-Slow tools (run_feroxbuster, run_nuclei, run_sqlmap, run_hydra, run_enum4linux_ng, \
-run_john, run_gitleaks, run_trufflehog, run_netexec, msf_exploit) can take minutes and \
-may time out if called directly. For these, prefer launch_scan to run them in the \
-background, then poll with get_scan_status and read results with get_scan_results \
-once it reports completed -- rather than calling the tool directly and losing the \
-scan entirely if it times out.
+Only nmap, nuclei, nikto, and whatweb can run in the background via launch_scan (pass \
+their bare name, e.g. launch_scan(tool="nuclei", target=...) -- NOT run_nuclei) if a \
+direct call to one of them seems likely to take a while; then poll get_scan_status and \
+read get_scan_results once it reports completed. Other slow tools (run_feroxbuster, \
+run_sqlmap, run_hydra, run_enum4linux_ng, run_john, run_gitleaks, run_trufflehog, \
+run_netexec, msf_exploit) have NO background option at all -- launch_scan will reject \
+them. If one of those times out, that attempt is lost; try a narrower scope (a smaller \
+wordlist, a shorter target range) rather than retrying the exact same call.
 
 You also have a tool called ask_decision_model. This is a FAST (~1-2 second) SECOND \
 OPINION from a small local classifier -- it is NOT another pentest model and it is NOT \
@@ -166,6 +169,94 @@ def _ollaya_decide(state, question, choices=None):
     )
 
 
+# --- Deterministic escalation (kali-network-model-700/-mle/-2n9) -----------
+# Mirrors agent.py's own _escalate_* pattern (kali-network-model-6w8's
+# precedent, restated in CLAUDE.md: the model does not reliably act on
+# guidance alone even when told explicitly -- kali-network-model-700
+# confirmed a SYSTEM_PROMPT-only fix did NOT change behavior on a repeat
+# live test). These run automatically on real tool results instead of
+# hoping the model notices, same discipline as agent.py's own escalations:
+# they feed a REAL follow-up tool result back into the conversation, they
+# never fabricate one.
+
+# Only these 4 (bare names) are valid launch_scan `tool` values -- confirmed
+# live via the real MCP schema. feroxbuster/sqlmap/hydra/enum4linux_ng/john/
+# gitleaks/trufflehog/netexec/msf_exploit have NO background-execution
+# alternative in raven-nest-mcp at all; an earlier SYSTEM_PROMPT draft
+# incorrectly implied launch_scan covered all of them, which may be part of
+# why 700's original fix never changed anything -- the model may have been
+# right not to use launch_scan for feroxbuster, since that would have
+# failed a schema check anyway.
+_LAUNCH_SCAN_TOOLS = {"run_nmap": "nmap", "run_nuclei": "nuclei", "run_nikto": "nikto", "run_whatweb": "whatweb"}
+_TIMEOUT_MARKERS = ("time out", "timed out", "timeout")
+_SCAN_POLL_INTERVAL_SECONDS = 30
+_SCAN_POLL_ATTEMPTS = 10
+
+
+async def _retry_via_launch_scan(session, tool_name, args, log):
+    """kali-network-model-700: a direct call to one of the 4 launch_scan-
+    capable tools timed out -- relaunch it in the background and poll
+    instead of just losing the scan. Returns real result text, or None if
+    there's nothing sensible to retry (no target, launch itself failed)."""
+    bare_name = _LAUNCH_SCAN_TOOLS[tool_name]
+    target = args.get("target")
+    if not target:
+        return None
+    log.info(f"[ESCALATE] {tool_name} timed out -- retrying via launch_scan(tool={bare_name})")
+    try:
+        launch_result = await call_tool(session, "launch_scan", {"tool": bare_name, "target": target})
+    except Exception as e:
+        return f"(auto-retry via launch_scan also failed to launch: {e})"
+    scan_id_match = re.search(r"[Ii][Dd]:\s*(\S+)", launch_result)
+    if not scan_id_match:
+        return f"(launch_scan didn't return a recognizable scan ID: {launch_result[:200]})"
+    scan_id = scan_id_match.group(1)
+    for _ in range(_SCAN_POLL_ATTEMPTS):
+        await asyncio.sleep(_SCAN_POLL_INTERVAL_SECONDS)
+        try:
+            status = await call_tool(session, "get_scan_status", {"scan_id": scan_id})
+        except Exception as e:
+            return f"(get_scan_status failed mid-poll: {e})"
+        if "completed" in status.lower():
+            try:
+                return await call_tool(session, "get_scan_results", {"scan_id": scan_id})
+            except Exception as e:
+                return f"(scan completed but get_scan_results failed: {e})"
+        if "failed" in status.lower():
+            return f"(background scan failed: {status[:200]})"
+    return (
+        f"(background scan {scan_id} still running after "
+        f"{_SCAN_POLL_ATTEMPTS * _SCAN_POLL_INTERVAL_SECONDS}s of polling -- giving up for this round, "
+        f"try get_scan_results({scan_id}) again later)"
+    )
+
+
+async def _recheck_after_login_post(session, args, log):
+    """kali-network-model-mle: http_request follows redirects by default,
+    so a successful login POST's real 302 gets hidden behind whatever the
+    redirect target's OWN status is (often a 404 at some unmapped default
+    redirect page, e.g. Django's /accounts/profile/) -- the model reads
+    that final status as a failed login and never re-checks the real
+    target with its now-authenticated session (raven-nest-mcp's own cookie
+    jar already carries it automatically, confirmed in docs/USAGE.md's
+    Session Features section). Only fires for a POST to a URL that looks
+    like a login endpoint; returns None (no-op) otherwise."""
+    url = args.get("url", "")
+    method = (args.get("method") or "GET").upper()
+    if method != "POST" or "login" not in url.lower():
+        return None
+    parent_url = url.rstrip("/").rsplit("/", 1)[0]
+    if not parent_url or parent_url == url:
+        return None
+    log.info(f"[ESCALATE] Login POST to {url} -- re-checking {parent_url} with the (possibly new) session cookie")
+    try:
+        recheck = await call_tool(session, "http_request", {"url": parent_url})
+    except Exception as e:
+        log.error(f"[ESCALATE] Re-check of {parent_url} failed: {e}")
+        return None
+    return f"[auto-recheck after login POST] GET {parent_url}:\n{recheck}"
+
+
 def _ollama_chat(messages, tools):
     payload = {
         "model": CONFIG.RAVEN_OLLAMA_MODEL,
@@ -196,6 +287,7 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
     log.info(f"[RAVEN] Starting raven-nest-mcp engagement on {target} (model={CONFIG.RAVEN_OLLAMA_MODEL})")
 
     outcome = "error"
+    disabled_tools = set()  # kali-network-model-2n9
     try:
         async with raven_session() as session:
             tools = await list_ollama_tools(session)
@@ -233,21 +325,70 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
                         except json.JSONDecodeError:
                             args = {}
                     log.info(f"[RAVEN] -> {name}({args})")
-                    try:
-                        if name == OLLAYA_TOOL_NAME:
-                            # Routed to Ollaya's HTTP /api/decide directly --
-                            # NOT raven_mcp_client.call_tool(), which only
-                            # knows about the raven-server MCP session and
-                            # has no idea this tool exists.
-                            result_text = _ollaya_decide(**(args or {}))
-                        else:
-                            result_text = await call_tool(session, name, args)
-                    except Exception as e:
-                        result_text = f"Error calling {name}: {e}"
-                        log.error(f"[RAVEN] {result_text}")
+
+                    if name in disabled_tools:
+                        # kali-network-model-2n9: confirmed disabled earlier
+                        # this session (e.g. Metasploit) -- a static
+                        # raven-server startup config, not something any
+                        # tool call can change. Live-observed the model
+                        # burn 6 of 12 rounds retrying this via an unrelated
+                        # tool (set_engagement) instead of pivoting -- don't
+                        # even forward the call, save the round.
+                        result_text = (
+                            f"{name} is disabled for this session (confirmed earlier) -- "
+                            f"no tool call can enable it. Do not retry it; try a different approach."
+                        )
+                        log.info(f"[ESCALATE] Blocked retry of disabled tool: {name}")
+                    else:
+                        try:
+                            if name == OLLAYA_TOOL_NAME:
+                                # Routed to Ollaya's HTTP /api/decide directly --
+                                # NOT raven_mcp_client.call_tool(), which only
+                                # knows about the raven-server MCP session and
+                                # has no idea this tool exists. Confirmed live
+                                # the model can wrap its own arguments in an
+                                # extra {"function": ..., "arguments": {...}}
+                                # layer (mirroring the tool_call shape it just
+                                # received) -- a plain TypeError from **kwargs
+                                # here doesn't name the real problem the way
+                                # raven-nest-mcp's own deny_unknown_fields
+                                # errors do, so raise a matching, specific one.
+                                try:
+                                    result_text = _ollaya_decide(**(args or {}))
+                                except TypeError as e:
+                                    raise ValueError(
+                                        f"failed to call {OLLAYA_TOOL_NAME}: {e}. "
+                                        f"Call it with exactly state, question, and optionally choices "
+                                        f"as top-level arguments -- not nested under a 'function'/'arguments' wrapper."
+                                    )
+                            else:
+                                result_text = await call_tool(session, name, args)
+                        except Exception as e:
+                            result_text = f"Error calling {name}: {e}"
+                            log.error(f"[RAVEN] {result_text}")
+
+                        if "is disabled" in result_text.lower():
+                            disabled_tools.add(name)
+
+                        if (
+                            name in _LAUNCH_SCAN_TOOLS
+                            and result_text.startswith(f"Error calling {name}:")
+                            and any(marker in result_text.lower() for marker in _TIMEOUT_MARKERS)
+                        ):
+                            # kali-network-model-700
+                            retried = await _retry_via_launch_scan(session, name, args, log)
+                            if retried is not None:
+                                result_text = retried
+
                     agent_logger.log_tool_call(tool_name=name, parameters=args, result=result_text)
                     log.info(f"[RAVEN] <- {name}: {result_text[:300]}")
                     messages.append({"role": "tool", "content": result_text})
+
+                    if name == "http_request" and name not in disabled_tools:
+                        # kali-network-model-mle
+                        recheck_text = await _recheck_after_login_post(session, args or {}, log)
+                        if recheck_text is not None:
+                            messages.append({"role": "tool", "content": recheck_text})
             else:
                 log.warning(f"[RAVEN] Hit max_rounds ({max_rounds}) without a final answer")
                 outcome = "max_rounds"
