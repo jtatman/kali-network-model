@@ -254,6 +254,7 @@ async def _recheck_after_login_post(session, args, log):
     except Exception as e:
         log.error(f"[ESCALATE] Re-check of {parent_url} failed: {e}")
         return None
+    log.info(f"[ESCALATE] <- recheck of {parent_url}: {recheck[:300]}")
     return f"[auto-recheck after login POST] GET {parent_url}:\n{recheck}"
 
 
