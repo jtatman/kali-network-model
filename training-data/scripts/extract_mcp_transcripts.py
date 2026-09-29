@@ -160,9 +160,24 @@ def main():
 
     rows = []
     primary_session_ids = set()
+    excluded_session_ids = set()
+    skipped_infra_failures = 0
     if not args.legacy_only:
         for path in sorted(glob.glob(os.path.join(TRANSCRIPT_DIR, "raven_*.json"))):
             row = _extract_primary(path)
+            # A session killed mid-engagement by an infra fault (most often
+            # the shared Ollama host timing out under concurrent load, see
+            # kali-network-model-2yd) is not a real model decision trace --
+            # its last turn is a truncation artifact, not a genuine stop/
+            # give-up. Excluded (and NOT allowed to fall through to a legacy
+            # reconstruction below, which would hit the exact same truncated
+            # events) so the corpus doesn't learn "this is what a negative
+            # outcome looks like" from an engagement that never really got a
+            # chance to run.
+            if row["_outcome"] == "model_call_failed":
+                skipped_infra_failures += 1
+                excluded_session_ids.add(row["_session_id"])
+                continue
             rows.append(row)
             primary_session_ids.add(row["_session_id"])
 
@@ -179,9 +194,15 @@ def main():
             if row["_session_id"] in primary_session_ids:
                 skipped_dupes += 1
                 continue
+            if row["_session_id"] in excluded_session_ids:
+                skipped_infra_failures += 1
+                continue
             rows.append(row)
         if skipped_dupes:
             print(f"Skipped {skipped_dupes} legacy reconstruction(s) already covered by a primary transcript")
+
+    if skipped_infra_failures:
+        print(f"Skipped {skipped_infra_failures} transcript(s)/reconstruction(s) with outcome=model_call_failed (infra timeout, not real model behavior)")
 
     with open(args.out, "w") as f:
         for row in rows:
