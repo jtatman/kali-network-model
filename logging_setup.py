@@ -7,6 +7,7 @@ one process, so this is a straightforward extraction, not a design change.
 
 import logging
 import os
+import secrets
 from datetime import datetime
 
 from config import CONFIG
@@ -56,7 +57,12 @@ def setup_logger(name="agent", session_id=None):
     structured JSON log (see logger.AgentLogger) should reuse the returned
     session_id so the two files correlate.
     """
-    session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    # A short random suffix guards against two processes starting in the
+    # same second (confirmed a real, not hypothetical, risk once multiple
+    # raven-engage sessions run concurrently -- same-second collision would
+    # silently clobber both processes' session_<id>.log/.json and
+    # raven_transcripts/raven_<id>.json onto the same filenames).
+    session_id = session_id or f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(3)}"
     log_file = os.path.join(CONFIG.LOG_DIR, f"session_{session_id}.log")
 
     logger = logging.getLogger(name)
