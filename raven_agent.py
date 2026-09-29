@@ -258,6 +258,46 @@ async def _recheck_after_login_post(session, args, log):
     return f"[auto-recheck after login POST] GET {parent_url}:\n{recheck}"
 
 
+def _extract_host(value):
+    """Best-effort host extraction from a bare IP, an IP:port, or a full
+    URL, for comparing a tool call's target/url argument against the real
+    session target."""
+    if not isinstance(value, str) or not value:
+        return None
+    v = value.split("://", 1)[-1]
+    v = v.split("/", 1)[0]
+    v = v.split(":", 1)[0]
+    return v or None
+
+
+def _target_mismatch_warning(args, real_target_host):
+    """kali-network-model-les: confirmed live, twice, that the model can
+    silently switch to a target unrelated to the real one -- once a single
+    bad guess that failed safely (a malformed sqlmap URL), once a full-
+    session fixation on a famous placeholder IP ('10.10.10.10', burning 8
+    of 12 rounds on it after two tool errors). Reading the model's own
+    `thinking` traces for both incidents showed the same mechanism: once
+    the real target wasn't restated in the last message or two, the model
+    reasoned "since it's not specified here" and filled the gap from a
+    memorized "common vulhub target" prior, rather than looking back
+    through the conversation to where the real target was already given
+    (the user goal, and this session's own first run_nmap call) -- a
+    recency-biased reasoning failure, not incoherent "frustration."
+    Checks any target-shaped argument against the real session target;
+    returns a warning to prepend to the tool result if they don't match."""
+    for key in ("target", "url"):
+        if key in (args or {}):
+            host = _extract_host(args[key])
+            if host and host != real_target_host:
+                return (
+                    f"[WARNING: target mismatch -- this session's real target is "
+                    f"{real_target_host}, but this call's {key} was '{args[key]}'. "
+                    f"If that wasn't intentional, your next call should target "
+                    f"{real_target_host} instead.]\n\n"
+                )
+    return None
+
+
 def _ollama_chat(messages, tools):
     payload = {
         "model": CONFIG.RAVEN_OLLAMA_MODEL,
@@ -365,11 +405,25 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
                             else:
                                 result_text = await call_tool(session, name, args)
                         except Exception as e:
-                            result_text = f"Error calling {name}: {e}"
+                            # kali-network-model-les: both real target-drift
+                            # incidents happened on the call right after an
+                            # error, with the model's own reasoning
+                            # explicitly saying the target "isn't specified
+                            # here" -- restate it on every error so there's
+                            # never a gap for a memorized placeholder to
+                            # fill. Cheap, and only fires on the exact
+                            # trigger condition actually observed.
+                            result_text = f"Error calling {name}: {e} (reminder: this engagement's target is {target})"
                             log.error(f"[RAVEN] {result_text}")
 
                         if "is disabled" in result_text.lower():
                             disabled_tools.add(name)
+
+                        if name != OLLAYA_TOOL_NAME:
+                            mismatch = _target_mismatch_warning(args, _extract_host(target))
+                            if mismatch:
+                                result_text = mismatch + result_text
+                                log.warning(f"[ESCALATE] {mismatch.strip()}")
 
                         if (
                             name in _LAUNCH_SCAN_TOOLS
