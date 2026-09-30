@@ -338,6 +338,24 @@ async def run_raven_engagement(target, goal, log, agent_logger, max_rounds=MAX_R
                 f"(+ 1 local ask_decision_model/Ollaya tool)"
             )
 
+            # kali-network-model-9mc: without this, every engagement shares
+            # whatever engagement scope raven-server defaults to, so
+            # list_findings/generate_report silently accumulate findings
+            # across ALL engagements ever run against this raven-server
+            # instance -- confirmed live to leak a prior, unrelated target's
+            # findings into a session's context and get acted on as if they
+            # were about the current target. A fresh, unique name per
+            # session (matching set_engagement's own charset requirement:
+            # letters, digits, '-', '_', '.') closes this deterministically,
+            # rather than relying on the model to call set_engagement itself
+            # (it does not reliably do this -- see kali-network-model-2n9).
+            engagement_name = f"raven_{agent_logger.session['session_id']}"
+            try:
+                await call_tool(session, "set_engagement", {"name": engagement_name})
+                log.info(f"[RAVEN] Scoped this session to engagement '{engagement_name}'")
+            except Exception as e:
+                log.error(f"[RAVEN] Failed to scope engagement (findings may leak across sessions): {e}")
+
             for round_num in range(1, max_rounds + 1):
                 log.info(f"[RAVEN] Round {round_num}/{max_rounds}: calling {CONFIG.RAVEN_OLLAMA_MODEL}")
                 try:
